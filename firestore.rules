@@ -1,0 +1,75 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'admin@example.com';
+    }
+
+    function avatarCatalogPath() {
+      return /databases/$(database)/documents/settings/avatarCatalog;
+    }
+
+    function allowedAvatar(url) {
+      return url.matches('^/avatars/avatar-(red|teal|gold|blue|green|pink)\\.svg$')
+        || (exists(avatarCatalogPath()) && get(avatarCatalogPath()).data.urls.hasAny([url]));
+    }
+
+    match /users/{userId} {
+      function isOwner() {
+        return signedIn() && request.auth.uid == userId;
+      }
+
+      function validProfile() {
+        return request.resource.data.keys().hasOnly([
+            'displayName', 'bio', 'gender', 'avatarUrl', 'email', 'isBanned', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() <= 60
+          && request.resource.data.bio is string
+          && request.resource.data.bio.size() <= 280
+          && request.resource.data.gender in [
+            'Belum dipilih', 'Perempuan', 'Laki-laki', 'Non-biner', 'Tidak ingin menyebutkan'
+          ]
+          && request.resource.data.avatarUrl is string
+          && allowedAvatar(request.resource.data.avatarUrl)
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.isBanned is bool;
+      }
+
+      allow get: if isOwner() || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner()
+        && validProfile()
+        && request.resource.data.isBanned == false
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if (isOwner()
+          && validProfile()
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.isBanned == resource.data.isBanned
+          && request.resource.data.createdAt == resource.data.createdAt)
+        || (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBanned', 'updatedAt'])
+          && request.resource.data.isBanned is bool
+          && request.resource.data.updatedAt == request.time);
+      allow delete: if false;
+    }
+
+    match /settings/avatarCatalog {
+      allow get, list: if signedIn();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['urls', 'updatedAt'])
+        && request.resource.data.urls is list
+        && request.resource.data.urls.size() <= 100
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}
