@@ -9,7 +9,7 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn()
         && request.auth.token.email_verified == true
-        && request.auth.token.email == 'admin@example.com';
+        && request.auth.token.email == 'ys309700@gmail.com';
     }
 
     function avatarCatalogPath() {
