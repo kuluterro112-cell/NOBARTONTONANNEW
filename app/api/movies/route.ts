@@ -23,8 +23,14 @@ export async function GET(request: Request) {
     }
 
     try {
-      const [searchResults, movieGenres, tvGenres] = await Promise.all([
-        tmdbFetch<TmdbPage>(`/search/multi?query=${encodeURIComponent(query)}&${language}`),
+      const [searchPages, movieGenres, tvGenres] = await Promise.all([
+        Promise.all(
+          [1, 2, 3].map((page) =>
+            tmdbFetch<TmdbPage>(
+              `/search/multi?query=${encodeURIComponent(query)}&language=id-ID&page=${page}`,
+            ),
+          ),
+        ),
         tmdbFetch<TmdbGenreList>("/genre/movie/list?language=id-ID"),
         tmdbFetch<TmdbGenreList>("/genre/tv/list?language=id-ID"),
       ]);
@@ -32,15 +38,17 @@ export async function GET(request: Request) {
       const movieGenreMap = new Map(movieGenres.genres.map((genre) => [genre.id, genre.name]));
       const tvGenreMap = new Map(tvGenres.genres.map((genre) => [genre.id, genre.name]));
       const results = new Map<string, ReturnType<typeof mapTmdbListItem>>();
-      for (const item of searchResults.results) {
-        if (item.media_type !== "movie" && item.media_type !== "tv") continue;
-        const mediaType = item.media_type;
-        const movie = mapTmdbListItem(
-          item,
-          mediaType,
-          mediaType === "tv" ? tvGenreMap : movieGenreMap,
-        );
-        results.set(`${mediaType}:${movie.id}`, movie);
+      for (const page of searchPages) {
+        for (const item of page.results) {
+          if (item.media_type !== "movie" && item.media_type !== "tv") continue;
+          const mediaType = item.media_type;
+          const movie = mapTmdbListItem(
+            item,
+            mediaType,
+            mediaType === "tv" ? tvGenreMap : movieGenreMap,
+          );
+          results.set(`${mediaType}:${movie.id}`, movie);
+        }
       }
 
       return Response.json({ movies: [...results.values()] });
