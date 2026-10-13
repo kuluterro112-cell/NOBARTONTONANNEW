@@ -28,13 +28,18 @@ type DetailsLookup = {
   numberOfSeasons?: number;
 };
 
+type ScreenOrientationWithLock = ScreenOrientation & {
+  lock?: (orientation: "landscape") => Promise<void>;
+};
+
 export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   const [detailsLookup, setDetailsLookup] = useState<DetailsLookup | null>(null);
   const [activeServerId, setActiveServerId] = useState<string>("vidsrc.to");
   const [season, setSeason] = useState<number>(1);
   const [episode, setEpisode] = useState<number>(1);
   const [reloadKey, setReloadKey] = useState<number>(0);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isLandscapeMode, setIsLandscapeMode] = useState<boolean>(false);
+  const [landscapeMessage, setLandscapeMessage] = useState<string>("");
   const playerContainerRef = useRef<HTMLDivElement>(null);
 
   const mediaType: TmdbMediaType =
@@ -103,7 +108,11 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   // Fullscreen change listener
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+      if (document.fullscreenElement !== playerContainerRef.current) {
+        setIsLandscapeMode(false);
+        setLandscapeMessage("");
+        screen.orientation?.unlock?.();
+      }
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
@@ -139,12 +148,39 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
     return getVidSrcUrl(movie.id, mediaType, activeServerId, season, episode);
   }, [movie, mediaType, activeServerId, season, episode, detailsLookup, lookupKey]);
 
-  const toggleFullscreen = () => {
-    if (!playerContainerRef.current) return;
-    if (!document.fullscreenElement) {
-      playerContainerRef.current.requestFullscreen?.().catch(() => undefined);
-    } else {
-      document.exitFullscreen?.().catch(() => undefined);
+  const toggleLandscapeMode = async () => {
+    const player = playerContainerRef.current;
+    if (!player) return;
+
+    if (isLandscapeMode) {
+      try {
+        if (document.fullscreenElement === player) {
+          await document.exitFullscreen();
+        }
+        screen.orientation?.unlock?.();
+        setIsLandscapeMode(false);
+        setLandscapeMessage("");
+      } catch {
+        setLandscapeMessage("Belum dapat keluar dari layar penuh. Coba tombol kembali perangkat.");
+      }
+      return;
+    }
+
+    setIsLandscapeMode(true);
+    setLandscapeMessage("");
+
+    try {
+      if (player.requestFullscreen) {
+        await player.requestFullscreen();
+      }
+      const orientation = screen.orientation as ScreenOrientationWithLock;
+      if (orientation.lock) {
+        await orientation.lock("landscape");
+      } else {
+        setLandscapeMessage("Browser tidak menyediakan kunci orientasi; player diputar sebagai fallback.");
+      }
+    } catch {
+      setLandscapeMessage("Browser membatasi rotasi otomatis; player diputar sebagai fallback.");
     }
   };
 
@@ -326,8 +362,21 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
           <main className="mx-auto w-full max-w-[1000px] px-4 pb-5 pt-2 sm:px-6 sm:pt-4">
             <div
               ref={playerContainerRef}
-              className="relative mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-xl bg-black shadow-[0_24px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/15"
+              className={`relative mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-xl bg-black shadow-[0_24px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/15 ${
+                isLandscapeMode ? "player-landscape-mode" : ""
+              }`}
             >
+              {isLandscapeMode && (
+                <button
+                  aria-label="Keluar mode lanskap"
+                  className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full bg-black/70 text-white shadow-lg"
+                  onClick={() => void toggleLandscapeMode()}
+                  title="Keluar mode lanskap"
+                  type="button"
+                >
+                  <Minimize2 className="h-5 w-5" />
+                </button>
+              )}
               {movie.playbackUrl ? (
                 <video
                   autoPlay
@@ -418,22 +467,28 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
               <span className="hidden sm:inline">
                 Jika video lambat, coba ganti server di atas.
               </span>
+              {landscapeMessage && (
+                <span aria-live="polite" className="text-amber-200/80">
+                  {landscapeMessage}
+                </span>
+              )}
             </div>
             <button
-              aria-label={isFullscreen ? "Keluar layar penuh" : "Layar penuh"}
+              aria-label={isLandscapeMode ? "Keluar mode lanskap" : "Mode lanskap"}
               className="ml-4 flex shrink-0 items-center gap-1 text-white/70 hover:text-white"
-              onClick={toggleFullscreen}
+              onClick={() => void toggleLandscapeMode()}
+              title={isLandscapeMode ? "Keluar mode lanskap" : "Putar video ke lanskap"}
               type="button"
             >
-              {isFullscreen ? (
+              {isLandscapeMode ? (
                 <>
                   <Minimize2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Keluar Layar Penuh</span>
+                  <span>Keluar Lanskap</span>
                 </>
               ) : (
                 <>
                   <Maximize2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Layar Penuh</span>
+                  <span>Lanskap</span>
                 </>
               )}
             </button>

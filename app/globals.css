@@ -283,6 +283,27 @@ button {
   .search-shell-open input {
     width: calc(min(46vw, 190px) - 42px);
   }
+
+  .player-landscape-mode {
+    position: fixed !important;
+    z-index: 70;
+    inset: 0;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    aspect-ratio: auto !important;
+    border-radius: 0 !important;
+  }
+}
+
+@media (max-width: 640px) and (orientation: portrait) {
+  .player-landscape-mode {
+    top: 50%;
+    left: 50%;
+    width: 100dvh !important;
+    height: 100vw !important;
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

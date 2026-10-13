@@ -82,7 +82,14 @@ function SearchResults() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch(query ? `/api/movies?q=${encodeURIComponent(originalQuery)}` : "/api/movies")
+    const minimumLoadingTime = query
+      ? new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 4000);
+        })
+      : Promise.resolve();
+    const catalogueRequest = fetch(
+      query ? `/api/movies?q=${encodeURIComponent(originalQuery)}` : "/api/movies",
+    )
       .then(async (response) => {
         if (!response.ok) throw new Error("The latest catalogue could not be loaded.");
         return (await response.json()) as CatalogueResponse;
@@ -95,7 +102,9 @@ function SearchResults() {
       })
       .catch(() => {
         if (!cancelled) setCatalogueError(true);
-      })
+      });
+
+    Promise.all([catalogueRequest, minimumLoadingTime])
       .finally(() => {
         if (!cancelled) setLoadedQuery(originalQuery);
       });
@@ -196,8 +205,17 @@ function SearchResults() {
               <p className="text-lg font-semibold text-white">Masukkan judul tontonan</p>
               <p className="mt-1 text-sm">Ketik judul di kolom pencarian lalu tekan Enter.</p>
             </div>
+          ) : loadedQuery !== originalQuery ? (
+            <div
+              aria-live="polite"
+              className="flex min-h-52 flex-col items-center justify-center gap-3 text-sm text-white/55"
+              role="status"
+            >
+              <LoaderCircle className="h-8 w-8 animate-spin text-[#e50914]" />
+              Memuat semua hasil pencarian...
+            </div>
           ) : results.length > 0 ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(148px,210px))] items-start justify-center gap-x-4 gap-y-8 sm:justify-start sm:gap-x-5">
+            <div className="grid max-w-[1000px] grid-cols-3 items-start gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-8">
               {results.map((movie) => (
                 <MovieCard
                   key={`${movie.mediaType || movie.type || "movie"}:${movie.id}`}
