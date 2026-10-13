@@ -5,6 +5,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Nobar Tontonan | Cerita dimulai di sini",
   description: "Jelajahi film dan serial pilihan untuk malam yang lebih seru.",
+  other: {
+    "google-adsense-account": "ca-pub-4943379423892555",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
