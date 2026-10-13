@@ -407,7 +407,7 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
               ) : activeStreamUrl ? (
                 <iframe
                   key={`${activeStreamUrl}-${reloadKey}`}
-                  allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                  allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *"
                   allowFullScreen
                   className="h-full w-full border-0"
                   referrerPolicy="origin"
