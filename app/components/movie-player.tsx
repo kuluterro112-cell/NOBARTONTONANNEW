@@ -108,11 +108,34 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   // Fullscreen change listener
   useEffect(() => {
     const handleFullscreenChange = () => {
-      if (document.fullscreenElement !== playerContainerRef.current) {
-        setIsLandscapeMode(false);
+      const player = playerContainerRef.current;
+      const fullscreenElement = document.fullscreenElement;
+      const playerIsFullscreen = Boolean(player && fullscreenElement && player.contains(fullscreenElement));
+
+      setIsLandscapeMode(playerIsFullscreen);
+      if (!playerIsFullscreen) {
         setLandscapeMessage("");
         screen.orientation?.unlock?.();
+        return;
       }
+
+      if (!player || !fullscreenElement) return;
+      const orientation = screen.orientation as ScreenOrientationWithLock;
+      if (!orientation.lock) {
+        setLandscapeMessage("Browser tidak menyediakan kunci orientasi; player diputar sebagai fallback.");
+        return;
+      }
+
+      void orientation.lock("landscape").then(
+        () => {
+          if (player.contains(document.fullscreenElement)) setLandscapeMessage("");
+        },
+        () => {
+          if (player.contains(document.fullscreenElement)) {
+            setLandscapeMessage("Browser membatasi rotasi otomatis; player diputar sebagai fallback.");
+          }
+        },
+      );
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
@@ -154,7 +177,7 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
 
     if (isLandscapeMode) {
       try {
-        if (document.fullscreenElement === player) {
+        if (document.fullscreenElement && player.contains(document.fullscreenElement)) {
           await document.exitFullscreen();
         }
         screen.orientation?.unlock?.();
@@ -172,10 +195,6 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
     try {
       if (player.requestFullscreen) {
         await player.requestFullscreen();
-      }
-      const orientation = screen.orientation as ScreenOrientationWithLock;
-      if (orientation.lock) {
-        await orientation.lock("landscape");
       } else {
         setLandscapeMessage("Browser tidak menyediakan kunci orientasi; player diputar sebagai fallback.");
       }
