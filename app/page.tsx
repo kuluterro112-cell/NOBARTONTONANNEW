@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Clapperboard } from "lucide-react";
+import { AdSenseUnit } from "./components/adsense-unit";
 import { Hero } from "./components/hero";
 import { MovieModal } from "./components/movie-modal";
 import { MoviePlayer } from "./components/movie-player";
@@ -129,6 +130,9 @@ export default function Home() {
                 savedIds={savedIds}
                 title="Trending sekarang"
               />
+              <div className="px-5 sm:px-8 lg:px-14">
+                <AdSenseUnit />
+              </div>
               <MovieRow
                 id="movies"
                 movies={byIds(sections.topRated)}

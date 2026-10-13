@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { IntroLoader } from "./components/intro-loader";
 import "./globals.css";
 
@@ -13,6 +14,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <IntroLoader />
         {children}
+        <Script
+          async
+          crossOrigin="anonymous"
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4943379423892555"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );

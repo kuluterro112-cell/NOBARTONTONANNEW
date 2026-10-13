@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Film, LoaderCircle, Search } from "lucide-react";
+import { AdSenseUnit } from "../components/adsense-unit";
 import { MovieCard } from "../components/movie-card";
 import { MovieModal } from "../components/movie-modal";
 import { MoviePlayer } from "../components/movie-player";
@@ -216,17 +217,28 @@ function SearchResults() {
             </div>
           ) : results.length > 0 ? (
             <div className="grid max-w-[1000px] grid-cols-3 items-start gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-8">
-              {results.map((movie) => (
-                <MovieCard
-                  key={`${movie.mediaType || movie.type || "movie"}:${movie.id}`}
-                  layout="grid"
-                  movie={movie}
-                  onSelect={setSelectedMovie}
-                  onPlay={openPlayer}
-                  onToggleSaved={toggleSaved}
-                  saved={savedIds.includes(movie.id)}
-                />
+              {results.map((movie, index) => (
+                <Fragment key={`${movie.mediaType || movie.type || "movie"}:${movie.id}`}>
+                  <MovieCard
+                    layout="grid"
+                    movie={movie}
+                    onSelect={setSelectedMovie}
+                    onPlay={openPlayer}
+                    onToggleSaved={toggleSaved}
+                    saved={savedIds.includes(movie.id)}
+                  />
+                  {index === 5 && results.length > 6 && (
+                    <div className="col-span-3">
+                      <AdSenseUnit />
+                    </div>
+                  )}
+                </Fragment>
               ))}
+              {results.length <= 6 && (
+                <div className="col-span-3">
+                  <AdSenseUnit />
+                </div>
+              )}
             </div>
           ) : loadedQuery === originalQuery ? (
             <div className="flex min-h-52 flex-col items-center justify-center text-center text-white/55">
