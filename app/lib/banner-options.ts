@@ -1,6 +1,6 @@
 export type ProfileBannerMedia =
   | { type: "video"; src: string }
-  | { type: "embed"; src: string };
+  | { type: "embed"; src: string; thumbnail?: string };
 
 const youtubeIdPattern = /^[\w-]{11}$/;
 
@@ -35,11 +35,17 @@ export function getProfileBannerMedia(value: string): ProfileBannerMedia | null 
     const embedUrl = new URL(`https://www.youtube-nocookie.com/embed/${videoId}`);
     embedUrl.searchParams.set("autoplay", "1");
     embedUrl.searchParams.set("controls", "0");
+    embedUrl.searchParams.set("disablekb", "1");
+    embedUrl.searchParams.set("fs", "0");
     embedUrl.searchParams.set("loop", "1");
     embedUrl.searchParams.set("mute", "1");
-    embedUrl.searchParams.set("playlist", videoId);
     embedUrl.searchParams.set("playsinline", "1");
-    return { type: "embed", src: embedUrl.href };
+    embedUrl.searchParams.set("playlist", videoId);
+    return {
+      type: "embed",
+      src: embedUrl.href,
+      thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    };
   }
 
   if (hostname === "vimeo.com" || hostname === "player.vimeo.com") {

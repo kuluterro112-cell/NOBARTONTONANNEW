@@ -8,12 +8,32 @@ export function IntroLoader() {
   const [state, setState] = useState<LoaderState>("visible");
 
   useEffect(() => {
-    const exitTimer = window.setTimeout(() => setState("exiting"), 1800);
-    const hideTimer = window.setTimeout(() => setState("hidden"), 2200);
+    let exitTimer = 0;
+    let hideTimer = 0;
+    let fallbackTimer = 0;
+    let active = true;
+
+    const exitLoader = () => {
+      if (!active) return;
+      setState("exiting");
+      hideTimer = window.setTimeout(() => setState("hidden"), 400);
+    };
+
+    const loadPromise = document.readyState === "complete"
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => window.addEventListener("load", () => resolve(), { once: true }));
+    const fontsPromise = document.fonts?.ready.then(() => undefined) ?? Promise.resolve();
+
+    Promise.all([loadPromise, fontsPromise]).then(() => {
+      if (active) exitTimer = window.setTimeout(exitLoader, 1800);
+    });
+    fallbackTimer = window.setTimeout(exitLoader, 10000);
 
     return () => {
+      active = false;
       window.clearTimeout(exitTimer);
       window.clearTimeout(hideTimer);
+      window.clearTimeout(fallbackTimer);
     };
   }, []);
 

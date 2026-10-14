@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -32,6 +32,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const editRevision = useRef(0);
+  const pendingSave = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -123,59 +125,69 @@ export default function ProfilePage() {
   }, [router]);
 
   function updateField<K extends keyof ProfileData>(key: K, value: ProfileData[K]) {
+    editRevision.current += 1;
+    pendingSave.current = true;
     setProfile((current) => ({ ...current, [key]: value }));
     setError("");
     setSuccess("");
   }
 
-  async function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!user) return;
+  useEffect(() => {
+    if (loading || !user || !pendingSave.current) return;
 
-    const displayName = profile.displayName.trim();
-    const bio = profile.bio.trim();
-    if (!displayName) {
-      setError("Nama profil harus diisi.");
-      return;
-    }
-    if (!isAdminAvatar(profile.avatarUrl, avatarOptions.map((avatar) => avatar.src))) {
-      setError("Pilih avatar dari galeri yang disediakan.");
-      return;
-    }
+    const revision = editRevision.current;
+    const timer = window.setTimeout(() => {
+      const displayName = profile.displayName.trim();
+      const bio = profile.bio.trim();
+      if (!displayName) {
+        setError("Nama profil harus diisi sebelum perubahan bisa disimpan.");
+        return;
+      }
+      if (!isAdminAvatar(profile.avatarUrl, avatarOptions.map((avatar) => avatar.src))) {
+        setError("Pilih avatar dari galeri yang disediakan.");
+        return;
+      }
 
-    setSaving(true);
-    setError("");
-    setSuccess("");
-    try {
-      await updateProfile(user, { displayName, photoURL: profile.avatarUrl });
-      await setDoc(
-        doc(db, "users", user.uid),
-        {
-          displayName,
-          bio,
-          gender: profile.gender,
-          avatarUrl: profile.avatarUrl,
-          bannerUrl: profile.bannerUrl,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      await user.reload();
-      setProfile((current) => ({ ...current, displayName, bio }));
-      setSuccess("Profil berhasil disimpan.");
-    } catch (saveError) {
-      const code = typeof saveError === "object" && saveError && "code" in saveError
-        ? String(saveError.code)
-        : "";
-      setError(
-        code === "permission-denied"
-          ? "Firestore menolak penyimpanan. Terapkan firestore.rules di Firebase Console."
-          : "Profil gagal disimpan. Periksa koneksi dan konfigurasi Firestore.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
+      setSaving(true);
+      setError("");
+      setSuccess("");
+      void (async () => {
+        try {
+          await updateProfile(user, { displayName, photoURL: profile.avatarUrl });
+          await setDoc(
+            doc(db, "users", user.uid),
+            {
+              displayName,
+              bio,
+              gender: profile.gender,
+              avatarUrl: profile.avatarUrl,
+              bannerUrl: profile.bannerUrl,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
+          if (editRevision.current === revision) {
+            pendingSave.current = false;
+            setProfile((current) => ({ ...current, displayName, bio }));
+            setSuccess("Perubahan profil tersimpan otomatis.");
+          }
+        } catch (saveError) {
+          const code = typeof saveError === "object" && saveError && "code" in saveError
+            ? String(saveError.code)
+            : "";
+          setError(
+            code === "permission-denied"
+              ? "Firestore menolak penyimpanan. Terapkan firestore.rules di Firebase Console."
+              : "Profil gagal disimpan. Periksa koneksi dan konfigurasi Firestore.",
+          );
+        } finally {
+          setSaving(false);
+        }
+      })();
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [avatarOptions, loading, profile, user]);
 
   async function logout() {
     await (await import("firebase/auth")).signOut(auth);
@@ -205,30 +217,48 @@ export default function ProfilePage() {
         </button>
       </header>
 
-      <section className="profile-panel mx-auto mt-8 w-full max-w-[980px]">
-        {profile.bannerUrl && (
-          <div className="relative mb-7 h-40 overflow-hidden rounded-md border border-white/10 sm:h-52">
-            <ProfileBannerMedia
-              className="absolute inset-0 h-full w-full object-cover"
-              url={profile.bannerUrl}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/30 to-transparent" />
-            <p className="absolute bottom-4 left-5 text-lg font-bold text-white drop-shadow sm:text-2xl">
-              {profile.displayName || "Profil saya"}
-            </p>
+      <section className="profile-panel mx-auto mt-8 w-full max-w-[980px] !p-0">
+        <div className="relative mb-20">
+          <div className="relative h-48 overflow-hidden bg-gradient-to-br from-[#50171b] via-[#222] to-black sm:h-64">
+            {profile.bannerUrl && (
+              <ProfileBannerMedia
+                className="absolute inset-0 h-full w-full object-cover"
+                url={profile.bannerUrl}
+              />
+            )}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/10" />
           </div>
-        )}
+          <div className="absolute -bottom-14 left-6 h-28 w-28 overflow-hidden rounded-full border-[5px] border-[#181818] bg-[#262626] shadow-xl sm:left-10 sm:h-36 sm:w-36">
+            <Image
+              alt={profile.displayName ? `Avatar ${profile.displayName}` : "Avatar profil"}
+              className="object-cover"
+              fill
+              loader={externalImageLoader}
+              sizes="144px"
+              src={profile.avatarUrl}
+              unoptimized
+            />
+          </div>
+          <div className="absolute bottom-2 left-36 right-5 min-w-0 sm:bottom-4 sm:left-52">
+            <h1 className="truncate text-xl font-bold text-white drop-shadow sm:text-2xl">
+              {profile.displayName || "Profil saya"}
+            </h1>
+            <p className="mt-1 text-xs text-white/60">Nobar Tontonan</p>
+          </div>
+        </div>
+
+        <div className="px-5 pb-7 sm:px-9 sm:pb-9">
         <div className="flex items-center gap-3 border-b border-white/10 pb-6">
           <span className="grid h-10 w-10 place-items-center rounded bg-[#e50914] text-white">
             <Clapperboard className="h-5 w-5" />
           </span>
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#e50914]">Nobar Tontonan</p>
-            <h1 className="text-2xl font-bold">Profil saya</h1>
+            <h2 className="text-2xl font-bold">Edit profil</h2>
           </div>
         </div>
 
-        <form className="mt-7 grid gap-8 lg:grid-cols-[1fr_1.1fr]" onSubmit={saveProfile}>
+        <div className="mt-7 grid gap-8 lg:grid-cols-[1fr_1.1fr]">
           <fieldset>
             <legend className="text-sm font-semibold">Pilih avatar</legend>
             <p className="mt-1 text-xs text-white/45">Avatar dari koleksi yang disediakan admin.</p>
@@ -280,7 +310,7 @@ export default function ProfilePage() {
                       onClick={() => updateField("bannerUrl", url)}
                       type="button"
                     >
-                      <ProfileBannerMedia className="h-full w-full object-cover" url={url} />
+                      <ProfileBannerMedia className="h-full w-full object-cover" previewOnly url={url} />
                       {selected && (
                         <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-[#e50914] text-white">
                           <Check className="h-4 w-4" />
@@ -315,17 +345,13 @@ export default function ProfilePage() {
               <p className="auth-field-label">Email akun</p>
               <p className="mt-2 rounded border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white/55">{user.email}</p>
             </div>
-            {(error || success) && (
-              <p aria-live="polite" className={`text-sm ${error ? "text-red-300" : "text-emerald-300"}`}>
-                {error || success}
-              </p>
-            )}
-            <button className="auth-primary-button sm:w-auto sm:min-w-44" disabled={saving} type="submit">
-              {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-              {saving ? "Menyimpan..." : "Simpan profil"}
-            </button>
+            <p aria-live="polite" className={`flex items-center gap-2 text-sm ${error ? "text-red-300" : "text-emerald-300"}`}>
+              {saving && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              {error || (saving ? "Menyimpan perubahan..." : success || "Perubahan disimpan otomatis.")}
+            </p>
           </div>
-        </form>
+        </div>
+        </div>
       </section>
     </main>
   );

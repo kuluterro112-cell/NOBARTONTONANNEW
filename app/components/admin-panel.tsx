@@ -387,8 +387,9 @@ export function AdminPanel() {
           </form>
           {isHttpsVideoUrl(bannerUrl.trim()) && (
             <ProfileBannerMedia
-              className="mt-4 aspect-video max-h-48 rounded border border-white/10 bg-black object-cover"
+              className="relative mt-4 aspect-video max-h-48 rounded border border-white/10 bg-black object-cover"
               controls
+              previewOnly
               url={bannerUrl.trim()}
             />
           )}
@@ -396,7 +397,7 @@ export function AdminPanel() {
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {bannerUrls.map((url) => (
               <div className="group relative aspect-video overflow-hidden rounded border border-white/10 bg-black/30" key={url}>
-                <ProfileBannerMedia className="h-full w-full object-cover" url={url} />
+                <ProfileBannerMedia className="h-full w-full object-cover" previewOnly url={url} />
                 <button
                   aria-label="Hapus banner dari katalog"
                   className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded bg-black/75 text-white transition hover:bg-red-700"
