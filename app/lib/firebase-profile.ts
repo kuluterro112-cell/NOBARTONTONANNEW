@@ -8,4 +8,5 @@ export type ProfileData = {
   bio: string;
   gender: string;
   avatarUrl: string;
+  bannerUrl: string;
 };

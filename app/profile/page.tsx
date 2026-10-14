@@ -10,6 +10,7 @@ import { ArrowLeft, Check, Clapperboard, LoaderCircle, LogOut } from "lucide-rea
 import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { adminAvatarOptions, defaultAvatar, isAdminAvatar } from "../lib/avatar-options";
+import { isHttpsVideoUrl } from "../lib/banner-options";
 import { db, type ProfileData } from "../lib/firebase-profile";
 
 const emptyProfile: ProfileData = {
@@ -17,6 +18,7 @@ const emptyProfile: ProfileData = {
   bio: "",
   gender: "Belum dipilih",
   avatarUrl: defaultAvatar,
+  bannerUrl: "",
 };
 
 export default function ProfilePage() {
@@ -24,6 +26,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileData>(emptyProfile);
   const [avatarOptions, setAvatarOptions] = useState<readonly { id: string; label: string; src: string }[]>(adminAvatarOptions);
+  const [bannerOptions, setBannerOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -51,20 +54,26 @@ export default function ProfilePage() {
           if (!active) return;
           setUser(currentUser);
           try {
-            const [snapshot, catalogSnapshot] = await Promise.all([
+            const [snapshot, catalogSnapshot, bannerCatalogSnapshot] = await Promise.all([
               getDoc(doc(db, "users", currentUser.uid)),
               getDoc(doc(db, "settings", "avatarCatalog")),
+              getDoc(doc(db, "settings", "profileBannerCatalog")),
             ]);
             const data = snapshot.exists() ? snapshot.data() : {};
             const catalogData = catalogSnapshot.data();
             const catalogUrls = Array.isArray(catalogData?.urls)
               ? catalogData.urls.filter((url: unknown): url is string => typeof url === "string")
               : [];
+            const bannerUrls = bannerCatalogSnapshot.data()?.urls;
+            const availableBanners = Array.isArray(bannerUrls)
+              ? bannerUrls.filter((url: unknown): url is string => typeof url === "string" && isHttpsVideoUrl(url))
+              : [];
             if (active) {
               setAvatarOptions([
                 ...adminAvatarOptions,
                 ...catalogUrls.map((url) => ({ id: url, label: "Avatar admin", src: url })),
               ]);
+              setBannerOptions(availableBanners);
             }
             if (active) {
               setProfile({
@@ -74,6 +83,9 @@ export default function ProfilePage() {
                 avatarUrl: isAdminAvatar(currentUser.photoURL || data.avatarUrl || "", catalogUrls)
                   ? currentUser.photoURL || data.avatarUrl
                   : defaultAvatar,
+                bannerUrl: typeof data.bannerUrl === "string" && availableBanners.includes(data.bannerUrl)
+                  ? data.bannerUrl
+                  : "",
               });
               if (data.isBanned === true) router.replace("/login?banned=1");
             }
@@ -87,6 +99,7 @@ export default function ProfilePage() {
                 displayName: currentUser.displayName || "",
                 avatarUrl: isAdminAvatar(currentUser.photoURL || "") ? currentUser.photoURL! : defaultAvatar,
               });
+              setBannerOptions([]);
               setError("Profil belum dapat dimuat dari Firestore. Pastikan Firestore aktif dan rules sudah diterapkan.");
             }
           } finally {
@@ -141,6 +154,7 @@ export default function ProfilePage() {
           bio,
           gender: profile.gender,
           avatarUrl: profile.avatarUrl,
+          bannerUrl: profile.bannerUrl,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -191,6 +205,23 @@ export default function ProfilePage() {
       </header>
 
       <section className="profile-panel mx-auto mt-8 w-full max-w-[980px]">
+        {profile.bannerUrl && (
+          <div className="relative mb-7 h-40 overflow-hidden rounded-md border border-white/10 sm:h-52">
+            <video
+              aria-label="Pratinjau banner profil"
+              autoPlay
+              className="absolute inset-0 h-full w-full object-cover"
+              loop
+              muted
+              playsInline
+              src={profile.bannerUrl}
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/30 to-transparent" />
+            <p className="absolute bottom-4 left-5 text-lg font-bold text-white drop-shadow sm:text-2xl">
+              {profile.displayName || "Profil saya"}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-3 border-b border-white/10 pb-6">
           <span className="grid h-10 w-10 place-items-center rounded bg-[#e50914] text-white">
             <Clapperboard className="h-5 w-5" />
@@ -230,6 +261,41 @@ export default function ProfilePage() {
           </fieldset>
 
           <div className="space-y-5">
+            <fieldset>
+              <legend className="text-sm font-semibold">Banner profil animasi</legend>
+              <p className="mt-1 text-xs text-white/45">Pilih banner video yang disediakan admin.</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <button
+                  aria-pressed={!profile.bannerUrl}
+                  className={`grid aspect-video place-items-center rounded-md border-2 bg-black/30 text-xs text-white/60 transition ${!profile.bannerUrl ? "border-[#e50914] ring-2 ring-[#e50914]/25" : "border-white/10 hover:border-white/40"}`}
+                  onClick={() => updateField("bannerUrl", "")}
+                  type="button"
+                >
+                  Tanpa banner
+                </button>
+                {bannerOptions.map((url, index) => {
+                  const selected = profile.bannerUrl === url;
+                  return (
+                    <button
+                      aria-label={`Pilih banner ${index + 1}`}
+                      aria-pressed={selected}
+                      className={`relative aspect-video overflow-hidden rounded-md border-2 transition ${selected ? "border-[#e50914] ring-2 ring-[#e50914]/25" : "border-white/10 hover:border-white/40"}`}
+                      key={url}
+                      onClick={() => updateField("bannerUrl", url)}
+                      type="button"
+                    >
+                      <video autoPlay className="h-full w-full object-cover" loop muted playsInline preload="metadata" src={url} />
+                      {selected && (
+                        <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-[#e50914] text-white">
+                          <Check className="h-4 w-4" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {bannerOptions.length === 0 && <p className="mt-2 text-xs text-white/40">Belum ada banner dari admin.</p>}
+            </fieldset>
             <label className="auth-field-label">
               Nama tampilan
               <input className="auth-input" maxLength={60} onChange={(event) => updateField("displayName", event.target.value)} required value={profile.displayName} />

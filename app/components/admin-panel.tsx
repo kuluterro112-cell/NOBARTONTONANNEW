@@ -34,6 +34,7 @@ import {
 import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { isAdminEmail } from "../lib/admin-emails";
+import { isHttpsVideoUrl } from "../lib/banner-options";
 import { db } from "../lib/firebase-profile";
 
 type AdminUser = {
@@ -42,6 +43,7 @@ type AdminUser = {
   displayName: string;
   isBanned: boolean;
   avatarUrl: string;
+  bannerUrl: string;
 };
 
 type AccessState = "loading" | "ready" | "denied";
@@ -61,9 +63,12 @@ export function AdminPanel() {
   const [access, setAccess] = useState<AccessState>("loading");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [avatarUrls, setAvatarUrls] = useState<string[]>([]);
+  const [bannerUrls, setBannerUrls] = useState<string[]>([]);
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
   const [search, setSearch] = useState("");
   const [busyUrl, setBusyUrl] = useState("");
+  const [busyBannerUrl, setBusyBannerUrl] = useState("");
   const [busyUser, setBusyUser] = useState("");
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState("");
@@ -73,9 +78,10 @@ export function AdminPanel() {
     setLoadingData(true);
     setError("");
     try {
-      const [usersSnapshot, avatarsSnapshot] = await Promise.all([
+      const [usersSnapshot, avatarsSnapshot, bannersSnapshot] = await Promise.all([
         getDocs(collection(db, "users")),
         getDoc(doc(db, "settings", "avatarCatalog")),
+        getDoc(doc(db, "settings", "profileBannerCatalog")),
       ]);
       setUsers(
         usersSnapshot.docs.map((snapshot) => {
@@ -88,11 +94,18 @@ export function AdminPanel() {
               : "Tanpa nama",
             isBanned: data.isBanned === true,
             avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl : "",
+            bannerUrl: typeof data.bannerUrl === "string" ? data.bannerUrl : "",
           };
         }),
       );
       const urls = avatarsSnapshot.data()?.urls;
       setAvatarUrls(Array.isArray(urls) ? urls.filter((url): url is string => typeof url === "string") : []);
+      const videoUrls = bannersSnapshot.data()?.urls;
+      setBannerUrls(
+        Array.isArray(videoUrls)
+          ? videoUrls.filter((url): url is string => typeof url === "string" && isHttpsVideoUrl(url))
+          : [],
+      );
     } catch (loadError) {
       const code = typeof loadError === "object" && loadError && "code" in loadError
         ? String(loadError.code)
@@ -215,6 +228,64 @@ export function AdminPanel() {
     }
   }
 
+  async function addBanner(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const url = bannerUrl.trim();
+    if (!isHttpsVideoUrl(url)) {
+      setError("Masukkan URL video HTTPS langsung berformat MP4, WebM, atau OGG.");
+      return;
+    }
+    if (bannerUrls.includes(url)) {
+      setError("Link banner ini sudah ada di katalog.");
+      return;
+    }
+    if (bannerUrls.length >= 100) {
+      setError("Katalog sudah mencapai batas 100 banner. Hapus banner lama sebelum menambahkan yang baru.");
+      return;
+    }
+
+    setBusyBannerUrl(url);
+    setError("");
+    setNotice("");
+    try {
+      await setDoc(
+        doc(db, "settings", "profileBannerCatalog"),
+        { urls: arrayUnion(url), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setBannerUrls((current) => [...current, url]);
+      setBannerUrl("");
+      setNotice("Banner video berhasil ditambahkan ke pilihan pengguna.");
+    } catch {
+      setError("Banner gagal disimpan. Pastikan Firestore aktif dan akun ini memiliki akses admin.");
+    } finally {
+      setBusyBannerUrl("");
+    }
+  }
+
+  async function removeBanner(url: string) {
+    if (users.some((user) => user.bannerUrl === url)) {
+      setError("Banner ini masih dipakai pengguna. Minta mereka memilih banner lain sebelum menghapusnya.");
+      return;
+    }
+
+    setBusyBannerUrl(url);
+    setError("");
+    setNotice("");
+    try {
+      await updateDoc(doc(db, "settings", "profileBannerCatalog"), {
+        urls: arrayRemove(url),
+        updatedAt: serverTimestamp(),
+      });
+      setBannerUrls((current) => current.filter((item) => item !== url));
+      setNotice("Banner dihapus dari katalog.");
+    } catch {
+      setError("Banner gagal dihapus. Periksa aturan akses Firestore.");
+    } finally {
+      setBusyBannerUrl("");
+    }
+  }
+
   async function toggleBan(user: AdminUser) {
     if (user.id === adminUser?.uid) {
       setError("Admin tidak bisa membatasi akunnya sendiri.");
@@ -277,13 +348,75 @@ export function AdminPanel() {
             </Link>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#e50914]">Nobar Tontonan</p>
             <h1 className="mt-1 text-3xl font-bold">Admin panel</h1>
-            <p className="mt-1 text-sm text-white/50">Kelola avatar dan akun pengguna.</p>
+            <p className="mt-1 text-sm text-white/50">Kelola avatar, banner video, dan akun pengguna.</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-white/50 sm:block">{adminUser?.email}</span>
             <button className="auth-secondary-button !w-auto" onClick={logout} type="button">Keluar</button>
           </div>
         </header>
+
+        <section className="admin-card mt-7">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Katalog banner profil</h2>
+              <p className="mt-1 text-xs text-white/45">Tambahkan link HTTPS langsung ke video MP4, WebM, atau OGG yang di-host publik.</p>
+            </div>
+            <span className="text-sm text-white/45">{bannerUrls.length} pilihan</span>
+          </div>
+
+          <form className="mt-5 flex flex-col gap-3 sm:flex-row" onSubmit={addBanner}>
+            <label className="auth-field-label min-w-0 flex-1">
+              Link video banner
+              <input
+                className="auth-input"
+                onChange={(event) => setBannerUrl(event.target.value)}
+                placeholder="https://domain.com/banner.mp4"
+                required
+                type="url"
+                value={bannerUrl}
+              />
+            </label>
+            <button className="auth-primary-button self-end sm:w-auto" disabled={Boolean(busyBannerUrl)} type="submit">
+              {busyBannerUrl && busyBannerUrl === bannerUrl.trim()
+                ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                : <Plus className="h-4 w-4" />}
+              Tambahkan banner
+            </button>
+          </form>
+          {isHttpsVideoUrl(bannerUrl.trim()) && (
+            <video
+              aria-label="Pratinjau banner video"
+              className="mt-4 aspect-video max-h-48 rounded border border-white/10 bg-black object-cover"
+              controls
+              muted
+              playsInline
+              preload="metadata"
+              src={bannerUrl.trim()}
+            />
+          )}
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {bannerUrls.map((url) => (
+              <div className="group relative aspect-video overflow-hidden rounded border border-white/10 bg-black/30" key={url}>
+                <video autoPlay className="h-full w-full object-cover" loop muted playsInline preload="metadata" src={url} />
+                <button
+                  aria-label="Hapus banner dari katalog"
+                  className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded bg-black/75 text-white transition hover:bg-red-700"
+                  disabled={Boolean(busyBannerUrl)}
+                  onClick={() => void removeBanner(url)}
+                  type="button"
+                >
+                  {busyBannerUrl === url ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
+                <a aria-label="Buka sumber video" className="absolute bottom-2 left-2 grid h-8 w-8 place-items-center rounded bg-black/75 text-white" href={url} rel="noreferrer" target="_blank">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </div>
+            ))}
+            {bannerUrls.length === 0 && <p className="col-span-full py-5 text-center text-sm text-white/40">Belum ada banner video di katalog.</p>}
+          </div>
+        </section>
 
         <div className="mt-7 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
           <section className="admin-card">

@@ -16,9 +16,18 @@ service cloud.firestore {
       return /databases/$(database)/documents/settings/avatarCatalog;
     }
 
+    function profileBannerCatalogPath() {
+      return /databases/$(database)/documents/settings/profileBannerCatalog;
+    }
+
     function allowedAvatar(url) {
       return url.matches('^/avatars/avatar-(red|teal|gold|blue|green|pink)\\.svg$')
         || (exists(avatarCatalogPath()) && get(avatarCatalogPath()).data.urls.hasAny([url]));
+    }
+
+    function allowedProfileBanner(url) {
+      return url == ''
+        || (exists(profileBannerCatalogPath()) && get(profileBannerCatalogPath()).data.urls.hasAny([url]));
     }
 
     match /users/{userId} {
@@ -28,7 +37,7 @@ service cloud.firestore {
 
       function validProfile() {
         return request.resource.data.keys().hasOnly([
-            'displayName', 'bio', 'gender', 'avatarUrl', 'email', 'isBanned', 'createdAt', 'updatedAt'
+            'displayName', 'bio', 'gender', 'avatarUrl', 'bannerUrl', 'email', 'isBanned', 'createdAt', 'updatedAt'
           ])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
@@ -39,6 +48,8 @@ service cloud.firestore {
           ]
           && request.resource.data.avatarUrl is string
           && allowedAvatar(request.resource.data.avatarUrl)
+          && request.resource.data.bannerUrl is string
+          && allowedProfileBanner(request.resource.data.bannerUrl)
           && request.resource.data.email == request.auth.token.email
           && request.resource.data.isBanned is bool;
       }
@@ -63,6 +74,16 @@ service cloud.firestore {
     }
 
     match /settings/avatarCatalog {
+      allow get, list: if signedIn();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['urls', 'updatedAt'])
+        && request.resource.data.urls is list
+        && request.resource.data.urls.size() <= 100
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /settings/profileBannerCatalog {
       allow get, list: if signedIn();
       allow create, update: if isAdmin()
         && request.resource.data.keys().hasOnly(['urls', 'updatedAt'])
