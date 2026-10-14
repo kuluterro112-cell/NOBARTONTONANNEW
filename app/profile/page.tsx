@@ -11,6 +11,7 @@ import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { adminAvatarOptions, defaultAvatar, isAdminAvatar } from "../lib/avatar-options";
 import { isHttpsVideoUrl } from "../lib/banner-options";
+import { ProfileBannerMedia } from "../components/profile-banner-media";
 import { db, type ProfileData } from "../lib/firebase-profile";
 
 const emptyProfile: ProfileData = {
@@ -207,14 +208,9 @@ export default function ProfilePage() {
       <section className="profile-panel mx-auto mt-8 w-full max-w-[980px]">
         {profile.bannerUrl && (
           <div className="relative mb-7 h-40 overflow-hidden rounded-md border border-white/10 sm:h-52">
-            <video
-              aria-label="Pratinjau banner profil"
-              autoPlay
+            <ProfileBannerMedia
               className="absolute inset-0 h-full w-full object-cover"
-              loop
-              muted
-              playsInline
-              src={profile.bannerUrl}
+              url={profile.bannerUrl}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/30 to-transparent" />
             <p className="absolute bottom-4 left-5 text-lg font-bold text-white drop-shadow sm:text-2xl">
@@ -284,7 +280,7 @@ export default function ProfilePage() {
                       onClick={() => updateField("bannerUrl", url)}
                       type="button"
                     >
-                      <video autoPlay className="h-full w-full object-cover" loop muted playsInline preload="metadata" src={url} />
+                      <ProfileBannerMedia className="h-full w-full object-cover" url={url} />
                       {selected && (
                         <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-[#e50914] text-white">
                           <Check className="h-4 w-4" />

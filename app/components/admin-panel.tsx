@@ -35,6 +35,7 @@ import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { isAdminEmail } from "../lib/admin-emails";
 import { isHttpsVideoUrl } from "../lib/banner-options";
+import { ProfileBannerMedia } from "./profile-banner-media";
 import { db } from "../lib/firebase-profile";
 
 type AdminUser = {
@@ -360,7 +361,7 @@ export function AdminPanel() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">Katalog banner profil</h2>
-              <p className="mt-1 text-xs text-white/45">Tambahkan link HTTPS langsung ke video MP4, WebM, atau OGG yang di-host publik.</p>
+              <p className="mt-1 text-xs text-white/45">Link HTTPS YouTube, Vimeo, Dailymotion, Google Drive, file video langsung, atau link embed dari layanan lain.</p>
             </div>
             <span className="text-sm text-white/45">{bannerUrls.length} pilihan</span>
           </div>
@@ -371,7 +372,7 @@ export function AdminPanel() {
               <input
                 className="auth-input"
                 onChange={(event) => setBannerUrl(event.target.value)}
-                placeholder="https://domain.com/banner.mp4"
+                placeholder="https://youtu.be/... atau https://domain.com/banner.mp4"
                 required
                 type="url"
                 value={bannerUrl}
@@ -385,21 +386,17 @@ export function AdminPanel() {
             </button>
           </form>
           {isHttpsVideoUrl(bannerUrl.trim()) && (
-            <video
-              aria-label="Pratinjau banner video"
+            <ProfileBannerMedia
               className="mt-4 aspect-video max-h-48 rounded border border-white/10 bg-black object-cover"
               controls
-              muted
-              playsInline
-              preload="metadata"
-              src={bannerUrl.trim()}
+              url={bannerUrl.trim()}
             />
           )}
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {bannerUrls.map((url) => (
               <div className="group relative aspect-video overflow-hidden rounded border border-white/10 bg-black/30" key={url}>
-                <video autoPlay className="h-full w-full object-cover" loop muted playsInline preload="metadata" src={url} />
+                <ProfileBannerMedia className="h-full w-full object-cover" url={url} />
                 <button
                   aria-label="Hapus banner dari katalog"
                   className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded bg-black/75 text-white transition hover:bg-red-700"

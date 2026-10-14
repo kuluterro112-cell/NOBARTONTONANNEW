@@ -34,7 +34,7 @@ Registration sends a Firebase email verification link. Users must verify the add
 - Admins are listed by email in `app/lib/admin-emails.ts` and must use a verified Firebase Auth email.
 - Keep the same allowlist synchronized in `firestore.rules`, then publish the rules in Firebase Console. No service account or custom admin claim is required.
 - Open `/admin` to add public HTTPS avatar image URLs, remove unused avatars, search registered users, and ban/unban accounts.
-- The admin panel also manages profile banner videos. Add a public HTTPS direct link ending in `.mp4`, `.webm`, or `.ogg`; users can only choose videos in this catalog. Publish the updated `firestore.rules` so profile banner selections and catalog permissions work.
+- The admin panel also manages profile banner videos. It accepts HTTPS links from YouTube, Vimeo, Dailymotion, Google Drive, direct `.mp4`/`.webm`/`.ogg` files, and other providers' HTTPS embed links. Whether an external video plays depends on that provider's embed/privacy settings. Users can only choose videos in this catalog. Publish the updated `firestore.rules` so profile banner selections and catalog permissions work.
 - User records are created during registration. Accounts created before this feature appear after their next successful login.
 
 ## Learn More
