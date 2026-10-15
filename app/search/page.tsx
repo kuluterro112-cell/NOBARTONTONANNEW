@@ -262,7 +262,11 @@ function SearchResults() {
         onToggleSaved={toggleSaved}
         saved={selectedMovie ? savedIds.includes(selectedMovie.id) : false}
       />
-      <MoviePlayer movie={playerMovie} onClose={() => setPlayerMovie(null)} />
+      <MoviePlayer
+        key={playerMovie ? `${playerMovie.mediaType || playerMovie.type || "movie"}:${playerMovie.id}` : "closed"}
+        movie={playerMovie}
+        onClose={() => setPlayerMovie(null)}
+      />
     </>
   );
 }

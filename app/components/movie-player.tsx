@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
+  AlertTriangle,
   Clapperboard,
   ExternalLink,
   Maximize2,
@@ -13,7 +14,7 @@ import {
   Tv,
   X,
 } from "lucide-react";
-import type { Movie } from "../lib/movies";
+import type { Movie, MovieServer } from "../lib/movies";
 import { getVidSrcServers, getVidSrcUrl, type TmdbMediaType } from "../lib/vidsrc";
 
 type MoviePlayerProps = {
@@ -26,18 +27,67 @@ type DetailsLookup = {
   embedUrl?: string;
   previewUrl?: string;
   numberOfSeasons?: number;
+  watchUrl?: string;
+  servers?: MovieServer[];
+  animeEpisodes?: Movie["animeEpisodes"];
+};
+
+type AnimeServerStream = {
+  key: string;
+  url: string;
+};
+
+type AnimeLoadError = {
+  key: string;
+  message: string;
+};
+
+type ResolvedAnimeSlug = {
+  key: string;
+  slug: string;
 };
 
 type ScreenOrientationWithLock = ScreenOrientation & {
   lock?: (orientation: "landscape") => Promise<void>;
 };
 
+function preferredAnimeServer(servers: MovieServer[]) {
+  const vidhideServers = servers
+    .filter((server) => /vidhide/i.test(`${server.name} ${server.id}`))
+    .map((server) => ({
+      server,
+      resolution: Number(
+        `${server.name} ${server.badge || ""}`.match(/(\d{3,4})\s*p/i)?.[1] || 0,
+      ),
+    }))
+    .sort((left, right) => right.resolution - left.resolution);
+
+  return vidhideServers[0]?.server.id || servers[0]?.id || "";
+}
+
+function normalizeAnimeTitle(title: string) {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase()
+    .replace(/\b(?:subtitle|subtitles|sub|indo|indonesia)\b/g, " ")
+    .replace(/\bepisode\s+\d+(?:\s*[-–]\s*\d+)?\b/g, " ")
+    .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   const [detailsLookup, setDetailsLookup] = useState<DetailsLookup | null>(null);
-  const [activeServerId, setActiveServerId] = useState<string>("vidsrc.to");
+  const [activeServerId, setActiveServerId] = useState<string>(movie?.isAnime ? "" : "vidsrc.to");
   const [season, setSeason] = useState<number>(1);
   const [episode, setEpisode] = useState<number>(1);
   const [reloadKey, setReloadKey] = useState<number>(0);
+  const [animeRetryKey, setAnimeRetryKey] = useState(0);
+  const [animeDetailError, setAnimeDetailError] = useState<AnimeLoadError | null>(null);
+  const [animeServerError, setAnimeServerError] = useState<AnimeLoadError | null>(null);
+  const [resolvedAnimeSlug, setResolvedAnimeSlug] = useState<ResolvedAnimeSlug | null>(null);
+  const [failedFrameUrl, setFailedFrameUrl] = useState<string | null>(null);
   const [isLandscapeMode, setIsLandscapeMode] = useState<boolean>(false);
   const [landscapeMessage, setLandscapeMessage] = useState<string>("");
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -46,23 +96,116 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
     movie?.mediaType || (movie?.type === "series" ? "tv" : "movie");
   const isSeries = mediaType === "tv";
 
-  const lookupKey = movie ? `${mediaType}:${movie.id}` : "";
+  const lookupKey = movie
+    ? `${mediaType}:${movie.id}${movie.isAnime ? `:${episode}` : ""}`
+    : "";
+  const animeMovieKey = movie ? `${mediaType}:${movie.id}` : "";
+  const animeSlug =
+    movie?.animeSlug ||
+    (resolvedAnimeSlug?.key === animeMovieKey ? resolvedAnimeSlug.slug : "");
+  const animeDetailErrorForPlayer =
+    animeDetailError?.key === lookupKey
+      ? animeDetailError
+      : null;
+  const activeAnimeEpisodes =
+    detailsLookup?.key === lookupKey
+      ? detailsLookup.animeEpisodes
+      : movie?.animeEpisodes;
 
-  // Reset season/episode and server when movie changes
-  useEffect(() => {
-    if (movie) {
-      setSeason(1);
-      setEpisode(1);
-      setActiveServerId("vidsrc.to");
-      setReloadKey(0);
-    }
-  }, [movie?.id]);
-
-  // Fetch additional details if needed (trailers, seasons count, etc.)
+  // Fetch additional details if needed (seasons, anime episodes & streaming)
   useEffect(() => {
     if (!movie) return;
     let cancelled = false;
-    const key = `${mediaType}:${movie.id}`;
+    const key = lookupKey;
+
+    if (movie.isAnime) {
+      const loadAnimeDetails = async (animeIdentifier: string) => {
+        const response = await fetch(
+          `/api/anime/${encodeURIComponent(animeIdentifier)}?episode=${episode}`,
+          { signal: AbortSignal.timeout(20000) },
+        );
+        if (!response.ok) {
+          throw new Error(`Anime detail request failed (${response.status}).`);
+        }
+        return (await response.json()) as Movie;
+      };
+
+      const resolveAndLoadAnime = async () => {
+        let animeIdentifier = movie.animeSlug;
+        if (!animeIdentifier) {
+          const response = await fetch(
+            `/api/movies?q=${encodeURIComponent(movie.title)}`,
+            { signal: AbortSignal.timeout(20000) },
+          );
+          if (!response.ok) {
+            throw new Error(`Anime search request failed (${response.status}).`);
+          }
+          const data = (await response.json()) as { movies?: Movie[] };
+          const targetTitle = normalizeAnimeTitle(movie.title);
+          const match = data.movies?.find(
+            (candidate) =>
+              candidate.isAnime &&
+              candidate.animeSlug &&
+              normalizeAnimeTitle(candidate.title) === targetTitle,
+          );
+          if (!match?.animeSlug) {
+            throw new Error("No matching anime source was found.");
+          }
+          animeIdentifier = match.animeSlug;
+          if (!cancelled) setResolvedAnimeSlug({ key: animeMovieKey, slug: animeIdentifier });
+        }
+
+        return loadAnimeDetails(animeIdentifier);
+      };
+
+      resolveAndLoadAnime()
+        .then((details) => {
+          if (!cancelled && details?.isAnime) {
+            setDetailsLookup({
+              key,
+              embedUrl: details.embedUrl,
+              previewUrl: details.previewUrl,
+              numberOfSeasons: 1,
+              watchUrl: details.watchUrl,
+              servers: details.servers,
+              animeEpisodes: details.animeEpisodes,
+            });
+            setActiveServerId((current) =>
+              details.servers?.some((server) => server.id === current)
+                ? current
+                : preferredAnimeServer(details.servers || []),
+            );
+            setAnimeDetailError(
+              details.servers?.length
+                ? null
+                : { key, message: "Belum ada server video untuk episode ini." },
+            );
+          } else if (!cancelled) {
+            setAnimeDetailError({
+              key,
+              message: "Detail atau server anime tidak ditemukan.",
+            });
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setDetailsLookup({ key });
+            setAnimeDetailError({
+              key,
+              message:
+                error instanceof DOMException && error.name === "TimeoutError"
+                  ? "Pencarian server anime terlalu lama merespons."
+                  : error instanceof Error && error.message === "No matching anime source was found."
+                    ? "ID server untuk judul anime ini tidak tersedia di katalog sumber."
+                    : "Server anime gagal dimuat.",
+            });
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
 
     fetch(`/api/movies/${movie.id}?type=${mediaType}&season=${season}&episode=${episode}`)
       .then(async (response) => {
@@ -76,6 +219,7 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
             embedUrl: details.embedUrl,
             previewUrl: details.previewUrl,
             numberOfSeasons: details.numberOfSeasons,
+            watchUrl: details.watchUrl,
           });
         }
       })
@@ -86,7 +230,7 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
     return () => {
       cancelled = true;
     };
-  }, [movie?.id, mediaType, season, episode]);
+  }, [movie, mediaType, season, episode, lookupKey, animeMovieKey, animeRetryKey]);
 
   // Handle escape key
   useEffect(() => {
@@ -150,16 +294,78 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
       (isSeries ? 5 : 1),
   );
 
-  // VidSrc servers list for current season/episode
+  // Available servers list (VidSrc for movies/series, Otakudesu servers for anime)
   const availableServers = useMemo(() => {
     if (!movie || movie.playbackUrl) return [];
+    if (movie.isAnime) {
+      return detailsLookup?.key === lookupKey
+        ? detailsLookup.servers || []
+        : movie.servers || [];
+    }
     return getVidSrcServers(movie.id, mediaType, season, episode);
-  }, [movie, mediaType, season, episode]);
+  }, [movie, mediaType, season, episode, detailsLookup, lookupKey]);
+
+  // State to hold resolved anime server streaming url
+  const [animeServerStream, setAnimeServerStream] = useState<AnimeServerStream | null>(null);
+  const animeServerRequestKey = `${lookupKey}:${animeSlug}:${activeServerId}`;
+
+  useEffect(() => {
+    if (
+      !movie?.isAnime ||
+      !animeSlug ||
+      !activeServerId ||
+      activeServerId === "vidsrc.to"
+    ) return;
+
+    let cancelled = false;
+    const animeIdentifier = animeSlug;
+    fetch(`/api/anime/${encodeURIComponent(animeIdentifier)}?serverId=${encodeURIComponent(activeServerId)}`, {
+      signal: AbortSignal.timeout(20000),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Anime server request failed (${res.status}).`);
+        }
+        return (await res.json()) as { streamUrl?: string };
+      })
+      .then((data) => {
+        if (!cancelled) {
+          if (data?.streamUrl) {
+            setAnimeServerStream({ key: animeServerRequestKey, url: data.streamUrl });
+            setAnimeServerError(null);
+          } else {
+            setAnimeServerError({
+              key: animeServerRequestKey,
+              message: "Server tidak mengembalikan URL video.",
+            });
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setAnimeServerError({
+            key: animeServerRequestKey,
+            message:
+              error instanceof DOMException && error.name === "TimeoutError"
+                ? "Server video terlalu lama merespons."
+                : "URL server video gagal dimuat.",
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [movie, animeSlug, activeServerId, animeServerRequestKey, animeRetryKey]);
 
   // Resolved stream URL
   const activeStreamUrl = useMemo(() => {
     if (!movie) return undefined;
     if (movie.playbackUrl) return undefined;
+
+    if (movie.isAnime) {
+      return animeServerStream?.key === animeServerRequestKey ? animeServerStream.url : undefined;
+    }
 
     if (activeServerId === "trailer") {
       return (
@@ -169,7 +375,22 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
     }
 
     return getVidSrcUrl(movie.id, mediaType, activeServerId, season, episode);
-  }, [movie, mediaType, activeServerId, season, episode, detailsLookup, lookupKey]);
+  }, [movie, mediaType, activeServerId, season, episode, detailsLookup, lookupKey, animeServerStream, animeServerRequestKey]);
+
+  const blockedEmbedHost = useMemo(() => {
+    if (!movie?.isAnime || !activeStreamUrl) return null;
+    try {
+      const hostname = new URL(activeStreamUrl).hostname.toLowerCase();
+      return hostname === "desustream.net" || hostname.endsWith(".desustream.net")
+        ? hostname
+        : null;
+    } catch {
+      return null;
+    }
+  }, [activeStreamUrl, movie?.isAnime]);
+
+  const frameFailed = Boolean(activeStreamUrl && failedFrameUrl === activeStreamUrl);
+  const showEmbedFallback = Boolean(movie?.isAnime && (blockedEmbedHost || frameFailed));
 
   const toggleLandscapeMode = async () => {
     const player = playerContainerRef.current;
@@ -234,17 +455,19 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                 <div className="flex items-center gap-2">
                   <h2 className="truncate text-sm font-semibold sm:text-base">{movie.title}</h2>
                   <span className="shrink-0 rounded bg-[#e50914] px-1.5 py-0.2 text-[10px] font-bold uppercase text-white">
-                    VidSrc
+                    {movie.isAnime ? "Otakudesu Stream" : "VidSrc"}
                   </span>
                 </div>
                 <p className="flex items-center gap-1.5 text-[11px] text-white/50">
                   <span>{movie.year || ""}</span>
                   <span>•</span>
-                  <span>{isSeries ? "Serial TV" : "Film"}</span>
-                  {isSeries && (
+                  <span>{movie.isAnime ? "Anime" : isSeries ? "Serial TV" : "Film"}</span>
+                  {(isSeries || movie.isAnime) && (
                     <>
                       <span>•</span>
-                      <span className="text-white/80">S{season} : E{episode}</span>
+                      <span className="text-white/80">
+                        {movie.isAnime ? `Episode ${episode}` : `S${season} : E${episode}`}
+                      </span>
                     </>
                   )}
                 </p>
@@ -312,12 +535,25 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                       }}
                       type="button"
                     >
-                      <span>{srv.id.replace("vidsrc.", "").toUpperCase()}</span>
-                      <span className="text-[10px] opacity-75">#{index + 1}</span>
+                      <span>{srv.name || srv.id.replace("vidsrc.", "").toUpperCase()}</span>
+                      {!movie.isAnime && <span className="text-[10px] opacity-75">#{index + 1}</span>}
                     </button>
                   );
                 })}
-                {(movie.previewUrl || detailsLookup?.previewUrl) && (
+                {movie.isAnime && availableServers.length === 0 && activeServerId === "" && (
+                  <span className="text-xs text-white/45">
+                    {animeDetailErrorForPlayer
+                      ? "Server anime gagal dimuat."
+                      : detailsLookup?.key === lookupKey
+                        ? "Server anime belum tersedia."
+                        : animeSlug
+                          ? "Memuat server anime..."
+                          : "Mencari server anime..."}
+                  </span>
+                )}
+                {!movie.isAnime &&
+                  (movie.previewUrl ||
+                    (detailsLookup?.key === lookupKey && detailsLookup.previewUrl)) && (
                   <button
                     className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
                       activeServerId === "trailer"
@@ -332,8 +568,46 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                 )}
               </div>
 
-              {/* Series Season & Episode selectors */}
-              {isSeries && (
+              {/* Anime Episode selector or Series Season & Episode selectors */}
+              {movie.isAnime ? (
+                <div className="flex items-center gap-2 text-xs">
+                  <div className="flex items-center gap-1 text-white/50">
+                    <Tv className="h-3.5 w-3.5" />
+                    <span>{animeSlug ? "Episode:" : "Server:"}</span>
+                  </div>
+                  {animeSlug ? (
+                    <select
+                      aria-label="Pilih Episode Anime"
+                      className="max-w-[200px] truncate rounded border border-white/20 bg-zinc-800 px-2 py-1 text-xs text-white focus:border-[#e50914] focus:outline-none"
+                      onChange={(e) => {
+                        const epVal = Number(e.target.value);
+                        setEpisode(epVal);
+                        setActiveServerId("");
+                        setReloadKey((prev) => prev + 1);
+                      }}
+                      value={episode}
+                    >
+                      {activeAnimeEpisodes && activeAnimeEpisodes.length > 0 ? (
+                        activeAnimeEpisodes.map((ep, idx) => (
+                          <option key={ep.episodeId || idx} value={Number(ep.eps) || idx + 1}>
+                            {ep.title || `Episode ${ep.eps || idx + 1}`}
+                          </option>
+                        ))
+                      ) : (
+                        Array.from({ length: 24 }, (_, i) => i + 1).map((ep) => (
+                          <option key={ep} value={ep}>
+                            Episode {ep}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  ) : (
+                    <span className="text-white/45">
+                      {animeDetailErrorForPlayer ? "Tidak tersedia" : "Mencari server..."}
+                    </span>
+                  )}
+                </div>
+              ) : isSeries && (
                 <div className="flex items-center gap-2 text-xs">
                   <div className="flex items-center gap-1 text-white/50">
                     <Tv className="h-3.5 w-3.5" />
@@ -404,12 +678,89 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                   playsInline
                   src={movie.playbackUrl}
                 />
+              ) : showEmbedFallback ? (
+                <div
+                  aria-live="polite"
+                  className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center"
+                  role="status"
+                >
+                  <AlertTriangle className="mb-4 h-10 w-10 text-amber-300" />
+                  <h3 className="text-lg font-semibold sm:text-2xl">
+                    {blockedEmbedHost
+                      ? "Penyedia menolak pemutar tertanam"
+                      : "Sumber video tidak dapat dimuat"}
+                  </h3>
+                  <p className="mt-2 max-w-lg text-sm leading-6 text-white/60">
+                    {blockedEmbedHost
+                      ? `${blockedEmbedHost} menolak koneksi dari iframe. Ini pembatasan dari host video, bukan masalah tampilan aplikasi.`
+                      : "Host video gagal dimuat di dalam player. Coba lagi atau cari opsi tontonan resmi."}
+                  </p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-3">
+                    {!blockedEmbedHost && activeStreamUrl && (
+                      <button
+                        className="inline-flex min-h-10 items-center gap-2 rounded border border-white/20 px-4 text-sm font-semibold text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                        onClick={() => {
+                          setFailedFrameUrl(null);
+                          setReloadKey((current) => current + 1);
+                        }}
+                        type="button"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        Coba lagi
+                      </button>
+                    )}
+                    <a
+                      className="inline-flex min-h-10 items-center gap-2 rounded bg-white px-4 text-sm font-semibold text-black transition-colors hover:bg-white/80"
+                      href={`https://www.themoviedb.org/search?query=${encodeURIComponent(movie.title)}`}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Cari opsi tontonan resmi
+                    </a>
+                  </div>
+                </div>
+              ) : movie.isAnime &&
+                (animeDetailErrorForPlayer ||
+                  animeServerError?.key === animeServerRequestKey) ? (
+                <div
+                  aria-live="polite"
+                  className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center"
+                  role="alert"
+                >
+                  <AlertTriangle className="mb-4 h-10 w-10 text-amber-300" />
+                  <h3 className="text-lg font-semibold sm:text-2xl">
+                    {animeDetailErrorForPlayer
+                      ? "Video anime tidak tersedia"
+                      : "Video anime belum dapat dimuat"}
+                  </h3>
+                  <p className="mt-2 max-w-lg text-sm leading-6 text-white/60">
+                    {animeDetailErrorForPlayer
+                      ? animeDetailErrorForPlayer.message
+                      : animeServerError?.message}
+                  </p>
+                  <button
+                    className="mt-5 inline-flex min-h-10 items-center gap-2 rounded border border-white/20 px-4 text-sm font-semibold text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                    onClick={() => {
+                      setFailedFrameUrl(null);
+                      setAnimeDetailError(null);
+                      setAnimeServerError(null);
+                      setResolvedAnimeSlug(null);
+                      setAnimeRetryKey((current) => current + 1);
+                    }}
+                    type="button"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Coba muat server lagi
+                  </button>
+                </div>
               ) : activeStreamUrl ? (
                 <iframe
                   key={`${activeStreamUrl}-${reloadKey}`}
                   allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *"
                   allowFullScreen
                   className="h-full w-full border-0"
+                  onError={() => setFailedFrameUrl(activeStreamUrl)}
                   referrerPolicy="origin"
                   src={activeStreamUrl}
                   title={`Streaming ${movie.title}`}
@@ -418,14 +769,27 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                 <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
                   <Clapperboard className="mb-5 h-12 w-12 text-white/35" />
                   <h3 className="text-lg font-semibold sm:text-2xl">
-                    Menyiapkan player streaming...
+                    {movie.isAnime ? "Menyiapkan player anime..." : "Menyiapkan player streaming..."}
                   </h3>
                   <p className="mt-2 max-w-lg text-sm leading-6 text-white/55">
-                    Memuat tautan video dari API VidSrc...
+                    {movie.isAnime
+                      ? "Sedang memuat stream episode dari API Anime Otakudesu..."
+                      : "Memuat tautan video dari API VidSrc..."}
                   </p>
                 </div>
               )}
             </div>
+            {movie.isAnime && detailsLookup?.key === lookupKey && detailsLookup.watchUrl && (
+              <a
+                className="mx-auto mt-4 inline-flex min-h-10 items-center gap-2 rounded border border-white/20 px-4 text-sm font-semibold text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                href={detailsLookup.watchUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Lihat layanan streaming resmi
+              </a>
+            )}
 
             <section
               aria-labelledby="player-movie-title"

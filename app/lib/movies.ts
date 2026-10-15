@@ -21,6 +21,13 @@ export type Movie = {
   cast: string[];
   type?: "film" | "series";
   mediaType?: "movie" | "tv";
+  isAnime?: boolean;
+  animeSlug?: string;
+  animeEpisodes?: {
+    title: string;
+    eps?: number | string | null;
+    episodeId: string;
+  }[];
   watchProviders?: string[];
   watchUrl?: string;
   embedUrl?: string;
@@ -37,6 +44,7 @@ export type MovieSections = {
   trending: number[];
   topRated: number[];
   series: number[];
+  anime: number[];
   action: number[];
   comedy: number[];
 };

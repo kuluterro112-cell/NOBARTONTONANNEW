@@ -9,6 +9,8 @@ const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
 export type TmdbListItem = {
   id: number;
   media_type?: TmdbMediaType | "person";
+  original_language?: string;
+  origin_country?: string[];
   title?: string;
   name?: string;
   overview?: string;
@@ -92,12 +94,17 @@ export function mapTmdbListItem(
   item: TmdbListItem,
   mediaType: TmdbMediaType,
   genres: Map<number, string>,
+  animeOverride = false,
 ): Movie {
   const date = mediaType === "movie" ? item.release_date : item.first_air_date;
   const poster = item.poster_path ? `${TMDB_IMAGE_BASE_URL}/w500${item.poster_path}` : "/poster-placeholder.svg";
   const backdrop = item.backdrop_path
     ? `${TMDB_IMAGE_BASE_URL}/original${item.backdrop_path}`
     : poster;
+  const isAnime =
+    animeOverride ||
+    (item.genre_ids?.includes(16) === true &&
+      (item.original_language === "ja" || item.origin_country?.includes("JP") === true));
 
   return {
     id: item.id,
@@ -113,8 +120,13 @@ export function mapTmdbListItem(
     cast: [],
     type: mediaType === "tv" ? "series" : "film",
     mediaType,
-    embedUrl: getLicensedEmbedUrl(item.id, mediaType),
-    servers: getVidSrcServers(item.id, mediaType),
+    isAnime,
+    ...(isAnime
+      ? {}
+      : {
+          embedUrl: getLicensedEmbedUrl(item.id, mediaType),
+          servers: getVidSrcServers(item.id, mediaType),
+        }),
   };
 }
 

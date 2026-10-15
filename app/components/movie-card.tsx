@@ -37,7 +37,13 @@ export function MovieCard({ movie, saved, onSelect, onPlay, onToggleSaved, layou
           src={movie.poster}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/10 opacity-80 transition-opacity group-hover:opacity-100" />
-        <div className="absolute inset-x-0 bottom-0 translate-y-2 p-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
+        <div
+          className={`absolute inset-x-0 bottom-0 p-3 transition-all duration-200 ${
+            movie.isAnime
+              ? "translate-y-0 opacity-100"
+              : "translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100"
+          }`}
+        >
           <div className="mb-2 flex items-center gap-2">
             <button
               aria-label={`Putar ${movie.title}`}

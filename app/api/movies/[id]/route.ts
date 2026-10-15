@@ -23,6 +23,8 @@ type TmdbDetails = {
   runtime?: number | null;
   episode_run_time?: number[];
   number_of_seasons?: number;
+  original_language?: string;
+  origin_country?: string[];
   genres?: { id: number; name: string }[];
   credits?: { cast?: { name: string }[] };
   aggregate_credits?: { cast?: { name: string }[] };
@@ -107,6 +109,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       (result) => result.iso_3166_1 === "ID",
     )?.rating;
     const cast = data.credits?.cast || data.aggregate_credits?.cast || [];
+    const isAnime =
+      data.genres?.some((genre) => genre.id === 16) === true &&
+      (data.original_language === "ja" || data.origin_country?.includes("JP") === true);
     const trailer = data.videos?.results
       ?.filter((video) => video.site === "YouTube" && video.type === "Trailer")
       .sort((left, right) => Number(Boolean(right.official)) - Number(Boolean(left.official)))[0];
@@ -132,10 +137,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       cast: cast.slice(0, 8).map((person) => person.name),
       type: mediaType === "tv" ? "series" : "film",
       mediaType: typedMediaType,
+      isAnime,
       watchProviders: [...new Set(providers.map((provider) => provider.provider_name))],
       watchUrl: providerData?.link,
-      embedUrl: licensedEmbedUrl,
-      servers,
+      ...(isAnime ? {} : { embedUrl: licensedEmbedUrl, servers }),
       numberOfSeasons: data.number_of_seasons || 1,
       previewUrl: trailer
         ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer.key)}?autoplay=1&rel=0`

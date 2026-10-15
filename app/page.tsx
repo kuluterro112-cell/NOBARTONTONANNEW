@@ -15,6 +15,7 @@ const fallbackSections: MovieSections = {
   trending: trendingMovies.map((movie) => movie.id),
   topRated: movies.filter((movie) => movie.type !== "series" && Number(movie.rating) >= 8).map((movie) => movie.id),
   series: movies.filter((movie) => movie.type === "series").map((movie) => movie.id),
+  anime: movies.filter((movie) => movie.isAnime).map((movie) => movie.id),
   action: movies
     .filter((movie) => movie.genres.some((genre) => ["Aksi", "Petualangan"].includes(genre)))
     .map((movie) => movie.id),
@@ -53,9 +54,11 @@ export default function Home() {
         if (cancelled || !data?.movies.length) return;
         setCatalogue(data.movies);
         setSections(data.sections);
-        const trending = data.movies.filter((movie) => data.sections.trending.includes(movie.id));
-        if (trending.length > 0) {
-          setHeroMovie(trending[Math.floor(Math.random() * trending.length)]);
+        const featured = data.movies.filter(
+          (movie) => data.sections.trending.includes(movie.id) || data.sections.anime.includes(movie.id),
+        );
+        if (featured.length > 0) {
+          setHeroMovie(featured[Math.floor(Math.random() * featured.length)]);
         }
       })
       .catch(() => undefined);
@@ -121,6 +124,15 @@ export default function Home() {
 
         <div className="relative z-10 -mt-5 pb-12 sm:-mt-8">
           <>
+              <MovieRow
+                id="anime"
+                movies={byIds(sections.anime)}
+                onSelect={setSelectedMovie}
+                onPlay={openPlayer}
+                onToggleSaved={toggleSaved}
+                savedIds={savedIds}
+                title="Anime populer"
+              />
               <MovieRow
                 id="trending"
                 movies={byIds(sections.trending)}
@@ -217,7 +229,11 @@ export default function Home() {
         onToggleSaved={toggleSaved}
         saved={selectedMovie ? savedIds.includes(selectedMovie.id) : false}
       />
-      <MoviePlayer movie={playerMovie} onClose={() => setPlayerMovie(null)} />
+      <MoviePlayer
+        key={playerMovie ? `${playerMovie.mediaType || playerMovie.type || "movie"}:${playerMovie.id}` : "closed"}
+        movie={playerMovie}
+        onClose={() => setPlayerMovie(null)}
+      />
     </>
   );
 }

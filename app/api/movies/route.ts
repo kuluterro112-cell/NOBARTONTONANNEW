@@ -1,4 +1,5 @@
 import type { MovieSections } from "../../lib/movies";
+import { fetchAnimeHomeList, searchAnime } from "../../lib/anime";
 import {
   hasTmdbCredentials,
   mapTmdbListItem,
@@ -19,11 +20,12 @@ export async function GET(request: Request) {
       return Response.json({ error: "Search query must be 120 characters or fewer." }, { status: 400 });
     }
     if (!hasTmdbCredentials()) {
-      return Response.json({ error: "TMDB credentials are not configured." }, { status: 503 });
+      const animeResults = await searchAnime(query);
+      return Response.json({ movies: animeResults });
     }
 
     try {
-      const [searchPages, movieGenres, tvGenres] = await Promise.all([
+      const [searchPages, movieGenres, tvGenres, animeSearchResults] = await Promise.all([
         Promise.all(
           [1, 2, 3].map((page) =>
             tmdbFetch<TmdbPage>(
@@ -33,6 +35,7 @@ export async function GET(request: Request) {
         ),
         tmdbFetch<TmdbGenreList>("/genre/movie/list?language=id-ID"),
         tmdbFetch<TmdbGenreList>("/genre/tv/list?language=id-ID"),
+        searchAnime(query),
       ]);
 
       const movieGenreMap = new Map(movieGenres.genres.map((genre) => [genre.id, genre.name]));
@@ -51,9 +54,18 @@ export async function GET(request: Request) {
         }
       }
 
+      // Add anime results from Otakudesu API
+      for (const anime of animeSearchResults) {
+        results.set(`anime:${anime.id}`, anime);
+      }
+
       return Response.json({ movies: [...results.values()] });
     } catch (error) {
       console.error("TMDB search request failed:", error);
+      const animeSearchResults = await searchAnime(query);
+      if (animeSearchResults.length > 0) {
+        return Response.json({ movies: animeSearchResults });
+      }
       return Response.json({ error: "Unable to search the TMDB catalogue." }, { status: 502 });
     }
   }
@@ -63,16 +75,34 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [trending, popularMovies, topRated, popularSeries, action, comedy, movieGenres, tvGenres] =
-      await Promise.all([
+    const [
+      trending,
+      popularMovies,
+      topRated,
+      popularSeries,
+      action,
+      comedy,
+      animeMovies,
+      animeSeries,
+      movieGenres,
+      tvGenres,
+      animeApiList,
+    ] = await Promise.all([
         tmdbFetch<TmdbPage>(`/trending/all/week?${language}`),
         tmdbFetch<TmdbPage>(`/movie/popular?${language}`),
         tmdbFetch<TmdbPage>(`/movie/top_rated?${language}`),
         tmdbFetch<TmdbPage>(`/tv/popular?${language}`),
         tmdbFetch<TmdbPage>(`/discover/movie?${language}&with_genres=28&sort_by=popularity.desc`),
         tmdbFetch<TmdbPage>(`/discover/movie?${language}&with_genres=35&sort_by=popularity.desc`),
+        tmdbFetch<TmdbPage>(
+          `/discover/movie?${language}&with_genres=16&with_origin_country=JP&sort_by=popularity.desc`,
+        ),
+        tmdbFetch<TmdbPage>(
+          `/discover/tv?${language}&with_genres=16&with_origin_country=JP&sort_by=popularity.desc`,
+        ),
         tmdbFetch<TmdbGenreList>(`/genre/movie/list?language=id-ID`),
         tmdbFetch<TmdbGenreList>(`/genre/tv/list?language=id-ID`),
+        fetchAnimeHomeList(),
       ]);
 
     const movieGenreMap = new Map(movieGenres.genres.map((genre) => [genre.id, genre.name]));
@@ -82,6 +112,7 @@ export async function GET(request: Request) {
       trending: [],
       topRated: [],
       series: [],
+      anime: [],
       action: [],
       comedy: [],
     };
@@ -95,7 +126,12 @@ export async function GET(request: Request) {
       for (const item of page.results.slice(0, limit)) {
         if (item.media_type === "person") continue;
         const mediaType = defaultType || (item.media_type === "tv" ? "tv" : "movie");
-        const movie = mapTmdbListItem(item, mediaType, mediaType === "tv" ? tvGenreMap : movieGenreMap);
+        const movie = mapTmdbListItem(
+          item,
+          mediaType,
+          mediaType === "tv" ? tvGenreMap : movieGenreMap,
+          section === "anime",
+        );
         const key = `${mediaType}:${movie.id}`;
         if (!catalogue.has(key)) catalogue.set(key, movie);
         if (!sections[section].includes(movie.id)) sections[section].push(movie.id);
@@ -108,6 +144,19 @@ export async function GET(request: Request) {
     addPage(popularSeries, "series", "tv");
     addPage(action, "action", "movie");
     addPage(comedy, "comedy", "movie");
+
+    // Populate Anime section primarily with Otakudesu API items (ongoing & completed)
+    if (animeApiList.length > 0) {
+      for (const anime of animeApiList) {
+        const key = `anime:${anime.id}`;
+        if (!catalogue.has(key)) catalogue.set(key, anime);
+        if (!sections.anime.includes(anime.id)) sections.anime.push(anime.id);
+      }
+    } else {
+      // Fallback to TMDB anime if API down
+      addPage(animeMovies, "anime", "movie");
+      addPage(animeSeries, "anime", "tv");
+    }
 
     return Response.json({ movies: [...catalogue.values()], sections });
   } catch (error) {

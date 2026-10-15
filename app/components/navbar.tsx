@@ -25,6 +25,7 @@ import { db } from "../lib/firebase-profile";
 const links = [
   { label: "Home", href: "#home" },
   { label: "TV Shows", href: "#tv-shows" },
+  { label: "Anime", href: "#anime" },
   { label: "Movies", href: "#movies" },
   { label: "New & Popular", href: "#trending" },
   { label: "My List", href: "#my-list" },

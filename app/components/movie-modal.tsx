@@ -105,7 +105,8 @@ export function MovieModal({ movie, saved, onClose, onPlay, onToggleSaved }: Mov
                     onClick={() => onPlay(displayMovie)}
                     type="button"
                   >
-                    <Play className="h-4 w-4 fill-current" /> Putar
+                    <Play className="h-4 w-4 fill-current" />
+                    Putar
                   </button>
                   <button
                     aria-label={saved ? "Hapus dari daftar saya" : "Tambahkan ke daftar saya"}
@@ -115,6 +116,11 @@ export function MovieModal({ movie, saved, onClose, onPlay, onToggleSaved }: Mov
                   >
                     {saved ? <Check className="h-5 w-5" /> : <CirclePlus className="h-5 w-5" />}
                   </button>
+                  {displayMovie.isAnime && (
+                    <span className="text-xs text-white/55">
+                      Subtitle Indonesia via Otakudesu
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

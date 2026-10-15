@@ -19,11 +19,13 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Firebase Setup
 
 - Copy `.env.local.example` to `.env.local` and fill in the TMDB and Firebase web app values from your Firebase project settings. Keep `.env.local` private; it is excluded from Git.
+- Set the licensed anime provider's base URL, API key, and endpoint paths in `.env.local` for home, schedule, details, complete/ongoing anime, genres, episodes, search, batch, stream server, and all anime. Keep the key server-side in `ANIME_API_KEY`; never rename it to a `NEXT_PUBLIC_*` variable. Replace the example paths and `{slug}`, `{page}`, `{keyword}`, and `{serverId}` placeholders with the provider's documented routes. The server-side anime catalogue and playback routes use this configuration.
 - Enable **Authentication > Sign-in method > Email/Password** in Firebase Console.
 - Add the local and production hostnames under **Authentication > Settings > Authorized domains**.
 - Create a Cloud Firestore database and publish the rules from `firestore.rules`.
 - `app/lib/avatar-options.ts` is the admin-managed allowlist for the bundled avatar images in `public/avatars`. Add an image to that list and allow its path in `firestore.rules` to offer it to users.
 - User profile documents are stored at `users/{uid}` and can only be read or updated by the matching signed-in user.
+- The home catalogue includes Japanese animation titles from the configured anime provider as well as titles discovered through TMDB. Anime detail pages show official watch-provider links when available.
 
 For a licensed video provider, set `VIDEO_PROVIDER_EMBED_TEMPLATE` and the exact comma-separated `VIDEO_PROVIDER_EMBED_HOSTS` in `.env.local`. The URL template may use `{id}` for the TMDB id and `{type}` for `movie` or `tv`. The server only returns HTTPS URLs whose hostname is on that allowlist. Restart the dev server after changing environment variables.
 
