@@ -7,9 +7,16 @@ type ProfileBannerMediaProps = {
   className: string;
   controls?: boolean;
   previewOnly?: boolean;
+  thumbnailOnly?: boolean;
 };
 
-export function ProfileBannerMedia({ url, className, controls = false, previewOnly = false }: ProfileBannerMediaProps) {
+export function ProfileBannerMedia({
+  url,
+  className,
+  controls = false,
+  previewOnly = false,
+  thumbnailOnly = false,
+}: ProfileBannerMediaProps) {
   const media = getProfileBannerMedia(url);
   if (!media) return null;
 
@@ -28,7 +35,7 @@ export function ProfileBannerMedia({ url, className, controls = false, previewOn
     );
   }
 
-  if (previewOnly && media.thumbnail) {
+  if ((previewOnly || thumbnailOnly) && media.thumbnail) {
     return (
       <Image
         alt="Pratinjau banner YouTube"

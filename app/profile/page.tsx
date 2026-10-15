@@ -208,7 +208,7 @@ export default function ProfilePage() {
 
   return (
     <main className="profile-page">
-      <header className="mx-auto flex w-full max-w-[980px] items-center justify-between gap-4">
+      <header className="mx-auto flex w-full items-center justify-between gap-4">
         <Link className="inline-flex items-center gap-2 text-sm text-white/65 hover:text-white" href="/">
           <ArrowLeft className="h-4 w-4" /> Kembali ke Nobar
         </Link>
@@ -217,12 +217,13 @@ export default function ProfilePage() {
         </button>
       </header>
 
-      <section className="profile-panel mx-auto mt-8 w-full max-w-[980px] !p-0">
+      <section className="profile-panel mx-auto mt-8 w-full !p-0">
         <div className="relative mb-20">
           <div className="relative h-48 overflow-hidden bg-gradient-to-br from-[#50171b] via-[#222] to-black sm:h-64">
             {profile.bannerUrl && (
               <ProfileBannerMedia
                 className="absolute inset-0 h-full w-full object-cover"
+                thumbnailOnly
                 url={profile.bannerUrl}
               />
             )}
