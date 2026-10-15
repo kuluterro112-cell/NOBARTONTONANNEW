@@ -257,6 +257,16 @@ button {
   padding: clamp(20px, 4vw, 36px);
 }
 
+.profile-banner-youtube {
+  top: 50%;
+  left: 50%;
+  width: 100vw;
+  height: 56.25vw;
+  min-width: 100%;
+  min-height: 100%;
+  transform: translate(-50%, -50%);
+}
+
 .admin-page {
   min-height: 100vh;
   padding: 32px clamp(18px, 5vw, 64px) 64px;

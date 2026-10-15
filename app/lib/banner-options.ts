@@ -37,10 +37,12 @@ export function getProfileBannerMedia(value: string): ProfileBannerMedia | null 
     embedUrl.searchParams.set("controls", "0");
     embedUrl.searchParams.set("disablekb", "1");
     embedUrl.searchParams.set("fs", "0");
+    embedUrl.searchParams.set("iv_load_policy", "3");
     embedUrl.searchParams.set("loop", "1");
     embedUrl.searchParams.set("mute", "1");
     embedUrl.searchParams.set("playsinline", "1");
     embedUrl.searchParams.set("playlist", videoId);
+    embedUrl.searchParams.set("rel", "0");
     return {
       type: "embed",
       src: embedUrl.href,

@@ -50,13 +50,13 @@ export function ProfileBannerMedia({
   return (
     <iframe
       allow="autoplay; encrypted-media"
-      className={`${className} pointer-events-none`}
+      className={`${className}${media.thumbnail ? " profile-banner-youtube" : ""} pointer-events-none`}
       loading={previewOnly ? "lazy" : "eager"}
       referrerPolicy="strict-origin-when-cross-origin"
       sandbox="allow-scripts allow-same-origin allow-presentation"
       tabIndex={-1}
       src={media.src}
-      title="Pratinjau banner video"
+      title="Banner profil video"
     />
   );
 }
