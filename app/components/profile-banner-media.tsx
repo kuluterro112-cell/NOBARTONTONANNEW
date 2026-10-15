@@ -7,7 +7,6 @@ type ProfileBannerMediaProps = {
   className: string;
   controls?: boolean;
   previewOnly?: boolean;
-  thumbnailOnly?: boolean;
 };
 
 export function ProfileBannerMedia({
@@ -15,7 +14,6 @@ export function ProfileBannerMedia({
   className,
   controls = false,
   previewOnly = false,
-  thumbnailOnly = false,
 }: ProfileBannerMediaProps) {
   const media = getProfileBannerMedia(url);
   if (!media) return null;
@@ -35,7 +33,7 @@ export function ProfileBannerMedia({
     );
   }
 
-  if ((previewOnly || thumbnailOnly) && media.thumbnail) {
+  if (previewOnly && media.thumbnail) {
     return (
       <Image
         alt="Pratinjau banner YouTube"
@@ -53,7 +51,7 @@ export function ProfileBannerMedia({
     <iframe
       allow="autoplay; encrypted-media"
       className={`${className} pointer-events-none`}
-      loading="lazy"
+      loading={previewOnly ? "lazy" : "eager"}
       referrerPolicy="strict-origin-when-cross-origin"
       sandbox="allow-scripts allow-same-origin allow-presentation"
       tabIndex={-1}

@@ -223,7 +223,6 @@ export default function ProfilePage() {
             {profile.bannerUrl && (
               <ProfileBannerMedia
                 className="absolute inset-0 h-full w-full object-cover"
-                thumbnailOnly
                 url={profile.bannerUrl}
               />
             )}
