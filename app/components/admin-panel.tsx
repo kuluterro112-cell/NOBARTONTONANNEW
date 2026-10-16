@@ -35,7 +35,12 @@ import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { isAdminEmail } from "../lib/admin-emails";
 import { isHttpsVideoUrl } from "../lib/banner-options";
-import { getLevelProgress, getPointsAtLevelStart } from "../lib/points";
+import {
+  formatPoints,
+  getLevelProgress,
+  getUserLevelProgress,
+  MAX_LEVEL,
+} from "../lib/points";
 import { ProfileBannerMedia } from "./profile-banner-media";
 import { db } from "../lib/firebase-profile";
 
@@ -44,6 +49,7 @@ type AdminUser = {
   email: string;
   displayName: string;
   isBanned: boolean;
+  level: number;
   avatarUrl: string;
   bannerUrl: string;
   xpPoints: number;
@@ -88,24 +94,26 @@ export function AdminPanel() {
         getDoc(doc(db, "settings", "profileBannerCatalog")),
       ]);
       const loadedUsers = usersSnapshot.docs.map((snapshot) => {
-          const data = snapshot.data();
-          return {
-            id: snapshot.id,
-            email: typeof data.email === "string" ? data.email : "Email tidak tersedia",
-            displayName: typeof data.displayName === "string" && data.displayName
-              ? data.displayName
-              : "Tanpa nama",
-            isBanned: data.isBanned === true,
-            avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl : "",
-            bannerUrl: typeof data.bannerUrl === "string" ? data.bannerUrl : "",
-            xpPoints: typeof data.xpPoints === "number" && Number.isSafeInteger(data.xpPoints)
-              ? data.xpPoints
-              : 0,
-          };
-        });
+        const data = snapshot.data();
+        const progress = Number.isSafeInteger(data.level) && data.level >= 1
+          ? getUserLevelProgress(data.level, typeof data.xpPoints === "number" ? data.xpPoints : 0)
+          : getLevelProgress(typeof data.xpPoints === "number" ? data.xpPoints : 0);
+        return {
+          id: snapshot.id,
+          email: typeof data.email === "string" ? data.email : "Email tidak tersedia",
+          displayName: typeof data.displayName === "string" && data.displayName
+            ? data.displayName
+            : "Tanpa nama",
+          isBanned: data.isBanned === true,
+          avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl : "",
+          bannerUrl: typeof data.bannerUrl === "string" ? data.bannerUrl : "",
+          level: progress.level,
+          xpPoints: progress.pointsInLevel,
+        };
+      });
       setUsers(loadedUsers);
       setLevelDrafts(Object.fromEntries(
-        loadedUsers.map((user) => [user.id, String(getLevelProgress(user.xpPoints).level)]),
+        loadedUsers.map((user) => [user.id, String(user.level)]),
       ));
       const urls = avatarsSnapshot.data()?.urls;
       setAvatarUrls(Array.isArray(urls) ? urls.filter((url): url is string => typeof url === "string") : []);
@@ -320,11 +328,8 @@ export function AdminPanel() {
 
   async function setUserLevel(user: AdminUser) {
     const level = Number(levelDrafts[user.id]);
-    let xpPoints: number;
-    try {
-      xpPoints = getPointsAtLevelStart(level);
-    } catch (levelError) {
-      setError(levelError instanceof Error ? levelError.message : "Level tidak valid.");
+    if (!Number.isSafeInteger(level) || level < 1 || level > MAX_LEVEL) {
+      setError(`Level harus berupa bilangan bulat antara 1 dan ${MAX_LEVEL}.`);
       return;
     }
 
@@ -333,10 +338,11 @@ export function AdminPanel() {
     setNotice("");
     try {
       await updateDoc(doc(db, "users", user.id), {
-        xpPoints,
+        level,
+        xpPoints: 0,
         updatedAt: serverTimestamp(),
       });
-      setUsers((current) => current.map((item) => item.id === user.id ? { ...item, xpPoints } : item));
+      setUsers((current) => current.map((item) => item.id === user.id ? { ...item, level, xpPoints: 0 } : item));
       setNotice(`Level ${level} berhasil ditetapkan untuk ${user.email}.`);
     } catch {
       setError("Level pengguna gagal diubah. Pastikan Firestore rules sudah dipublikasikan.");
@@ -540,7 +546,8 @@ export function AdminPanel() {
                       <p className="truncate text-sm font-medium">{user.displayName}</p>
                       <p className="truncate text-xs text-white/45">{user.email}</p>
                       <p className="mt-1 text-[11px] text-white/60">
-                        Level {getLevelProgress(user.xpPoints).level} · {user.xpPoints} poin
+                        Level {user.level} · {formatPoints(user.xpPoints)} /{" "}
+                        {formatPoints(getUserLevelProgress(user.level, user.xpPoints).pointsForNextLevel)} poin
                       </p>
                       <p className={`mt-1 text-[10px] font-semibold uppercase tracking-wide ${user.isBanned ? "text-red-300" : "text-emerald-300"}`}>
                         {user.isBanned ? "Dibatasi" : "Aktif"}
@@ -553,6 +560,7 @@ export function AdminPanel() {
                       className="auth-input !min-h-9 !w-20 px-2 text-center"
                       id={`user-level-${user.id}`}
                       min={1}
+                      max={MAX_LEVEL}
                       onChange={(event) => setLevelDrafts((current) => ({ ...current, [user.id]: event.target.value }))}
                       type="number"
                       value={levelDrafts[user.id] ?? "1"}

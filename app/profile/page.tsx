@@ -13,7 +13,7 @@ import { adminAvatarOptions, defaultAvatar, isAdminAvatar } from "../lib/avatar-
 import { isHttpsVideoUrl } from "../lib/banner-options";
 import { ProfileBannerMedia } from "../components/profile-banner-media";
 import { db, type ProfileData } from "../lib/firebase-profile";
-import { getLevelProgress } from "../lib/points";
+import { formatPoints, getLevelProgress, getUserLevelProgress } from "../lib/points";
 
 const emptyProfile: ProfileData = {
   displayName: "",
@@ -27,6 +27,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileData>(emptyProfile);
+  const [level, setLevel] = useState(1);
   const [xpPoints, setXpPoints] = useState(0);
   const [avatarOptions, setAvatarOptions] = useState<readonly { id: string; label: string; src: string }[]>(adminAvatarOptions);
   const [bannerOptions, setBannerOptions] = useState<string[]>([]);
@@ -65,7 +66,11 @@ export default function ProfilePage() {
               getDoc(doc(db, "settings", "profileBannerCatalog")),
             ]);
             const data = snapshot.exists() ? snapshot.data() : {};
-            setXpPoints(typeof data.xpPoints === "number" ? data.xpPoints : 0);
+            const progress = Number.isSafeInteger(data.level) && data.level >= 1
+              ? getUserLevelProgress(data.level, typeof data.xpPoints === "number" ? data.xpPoints : 0)
+              : getLevelProgress(typeof data.xpPoints === "number" ? data.xpPoints : 0);
+            setLevel(progress.level);
+            setXpPoints(progress.pointsInLevel);
             const catalogData = catalogSnapshot.data();
             const catalogUrls = Array.isArray(catalogData?.urls)
               ? catalogData.urls.filter((url: unknown): url is string => typeof url === "string")
@@ -98,7 +103,11 @@ export default function ProfilePage() {
             unsubscribeUser = onSnapshot(doc(db, "users", currentUser.uid), (userSnapshot) => {
               const userData = userSnapshot.data();
               if (userData?.isBanned === true) router.replace("/login?banned=1");
-              setXpPoints(typeof userData?.xpPoints === "number" ? userData.xpPoints : 0);
+              const progress = userData && Number.isSafeInteger(userData.level) && userData.level >= 1
+                ? getUserLevelProgress(userData.level, typeof userData.xpPoints === "number" ? userData.xpPoints : 0)
+                : getLevelProgress(typeof userData?.xpPoints === "number" ? userData.xpPoints : 0);
+              setLevel(progress.level);
+              setXpPoints(progress.pointsInLevel);
             });
           } catch {
             if (active) {
@@ -211,8 +220,10 @@ export default function ProfilePage() {
 
   if (!user) return <main className="auth-page" />;
 
-  const levelProgress = getLevelProgress(xpPoints);
-  const progressPercent = (levelProgress.pointsInLevel / levelProgress.pointsForNextLevel) * 100;
+  const levelProgress = getUserLevelProgress(level, xpPoints);
+  const progressPercent = Number(
+    BigInt(levelProgress.pointsInLevel) * BigInt(10_000) / levelProgress.pointsForNextLevel,
+  ) / 100;
 
   return (
     <main className="profile-page">
@@ -263,24 +274,28 @@ export default function ProfilePage() {
               <h2 className="mt-1 text-2xl font-black">Level {levelProgress.level}</h2>
             </div>
             <p className="text-sm text-white/65">
-              {levelProgress.pointsInLevel} / {levelProgress.pointsForNextLevel} poin ke level {levelProgress.level + 1}
+              {levelProgress.level === 100_000
+                ? "Level maksimum tercapai"
+                : `${formatPoints(levelProgress.pointsInLevel)} / ${formatPoints(levelProgress.pointsForNextLevel)} poin ke level ${levelProgress.level + 1}`}
             </p>
           </div>
           <div
-            aria-label={`${Math.min(100, progressPercent).toFixed(0)}% menuju level ${levelProgress.level + 1}`}
+            aria-label={levelProgress.level === 100_000 ? "Level maksimum tercapai" : `${Math.min(100, progressPercent).toFixed(0)}% menuju level ${levelProgress.level + 1}`}
             className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"
             role="progressbar"
-            aria-valuemax={levelProgress.pointsForNextLevel}
+            aria-valuemax={100}
             aria-valuemin={0}
-            aria-valuenow={levelProgress.pointsInLevel}
+            aria-valuenow={levelProgress.level === 100_000 ? 100 : progressPercent}
           >
             <div
               className="h-full rounded-full bg-[#e50914] transition-[width] duration-500"
-              style={{ width: `${Math.min(100, progressPercent)}%` }}
+              style={{ width: `${levelProgress.level === 100_000 ? 100 : Math.min(100, progressPercent)}%` }}
             />
           </div>
           <p className="mt-2 text-xs text-white/45">
-            Total {levelProgress.totalPoints} poin · 150 poin untuk setiap film atau episode anime baru.
+            {levelProgress.level === 100_000
+              ? "Level maksimum · poin tontonan baru tidak lagi menaikkan level."
+              : "150 poin untuk setiap film atau episode anime baru."}
           </p>
         </section>
         <div className="flex items-center gap-3 border-b border-white/10 pb-6">

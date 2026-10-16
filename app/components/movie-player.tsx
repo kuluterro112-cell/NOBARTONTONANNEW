@@ -413,7 +413,9 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
           ? "Kamu mendapat 150 poin tontonan!"
           : result === "unauthenticated"
             ? "Masuk ke akun untuk mendapatkan poin tontonan."
-            : "Poin untuk tontonan ini sudah pernah diklaim.",
+            : result === "max-level"
+              ? "Level maksimum 100.000 sudah tercapai."
+              : "Poin untuk tontonan ini sudah pernah diklaim.",
       );
     } catch (error) {
       rewardedThisSession.current.delete(contentKey);
