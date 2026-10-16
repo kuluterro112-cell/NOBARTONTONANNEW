@@ -25,6 +25,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - Create a Cloud Firestore database and publish the rules from `firestore.rules`.
 - `app/lib/avatar-options.ts` is the admin-managed allowlist for the bundled avatar images in `public/avatars`. Add an image to that list and allow its path in `firestore.rules` to offer it to users.
 - User profile documents are stored at `users/{uid}` and can only be read or updated by the matching signed-in user.
+- A signed-in user earns 150 points once per movie or anime episode when its player starts. The first level requires 150 points; each next level requires three times as many points as the previous level. The profile shows level progress, and admins can set any user's level from the admin panel. Publish the updated `firestore.rules` to enable point rewards and admin level changes.
 - The home catalogue includes Japanese animation titles from the configured anime provider as well as titles discovered through TMDB. Anime detail pages show official watch-provider links when available.
 
 For a licensed video provider, set `VIDEO_PROVIDER_EMBED_TEMPLATE` and the exact comma-separated `VIDEO_PROVIDER_EMBED_HOSTS` in `.env.local`. The URL template may use `{id}` for the TMDB id and `{type}` for `movie` or `tv`. The server only returns HTTPS URLs whose hostname is on that allowlist. Restart the dev server after changing environment variables.

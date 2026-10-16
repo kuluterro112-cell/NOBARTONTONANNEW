@@ -105,11 +105,12 @@ export async function GET(
       type: "series",
       mediaType: "tv",
       isAnime: true,
+      animeProvider: slug.startsWith("samehadaku:") ? "samehadaku" : "otakudesu",
       embedUrl: defaultStreamingUrl || undefined,
       servers: animeServers.length > 0 ? animeServers : undefined,
       numberOfSeasons: 1,
       animeEpisodes: sortedEpisodes.map((e) => ({
-        title: e.title,
+        title: String(e.title),
         eps: e.eps,
         episodeId: e.episodeId,
       })),

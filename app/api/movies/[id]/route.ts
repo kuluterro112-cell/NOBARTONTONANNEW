@@ -140,7 +140,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       isAnime,
       watchProviders: [...new Set(providers.map((provider) => provider.provider_name))],
       watchUrl: providerData?.link,
-      ...(isAnime ? {} : { embedUrl: licensedEmbedUrl, servers }),
+      embedUrl: licensedEmbedUrl,
+      servers,
       numberOfSeasons: data.number_of_seasons || 1,
       previewUrl: trailer
         ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer.key)}?autoplay=1&rel=0`

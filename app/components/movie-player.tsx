@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { Movie, MovieServer } from "../lib/movies";
 import { getVidSrcServers, getVidSrcUrl, type TmdbMediaType } from "../lib/vidsrc";
+import { rewardWatchedContent } from "../lib/watch-rewards";
 
 type MoviePlayerProps = {
   movie: Movie | null;
@@ -90,7 +91,9 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   const [failedFrameUrl, setFailedFrameUrl] = useState<string | null>(null);
   const [isLandscapeMode, setIsLandscapeMode] = useState<boolean>(false);
   const [landscapeMessage, setLandscapeMessage] = useState<string>("");
+  const [rewardNotice, setRewardNotice] = useState("");
   const playerContainerRef = useRef<HTMLDivElement>(null);
+  const rewardedThisSession = useRef(new Set<string>());
 
   const mediaType: TmdbMediaType =
     movie?.mediaType || (movie?.type === "series" ? "tv" : "movie");
@@ -290,8 +293,8 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   const totalSeasons = Math.max(
     1,
     movie?.numberOfSeasons ||
-      (detailsLookup?.key === lookupKey ? detailsLookup.numberOfSeasons : undefined) ||
-      (isSeries ? 5 : 1),
+    (detailsLookup?.key === lookupKey ? detailsLookup.numberOfSeasons : undefined) ||
+    (isSeries ? 5 : 1),
   );
 
   // Available servers list (VidSrc for movies/series, Otakudesu servers for anime)
@@ -392,6 +395,33 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
   const frameFailed = Boolean(activeStreamUrl && failedFrameUrl === activeStreamUrl);
   const showEmbedFallback = Boolean(movie?.isAnime && (blockedEmbedHost || frameFailed));
 
+  async function rewardPlayback() {
+    if (!movie || (!movie.isAnime && mediaType !== "movie")) return;
+    const activeEpisode = movie.isAnime
+      ? activeAnimeEpisodes?.find((item) => Number(item.eps) === episode)
+      : undefined;
+    const contentKey = movie.isAnime
+      ? `anime:${movie.animeSlug || movie.id}:${activeEpisode?.episodeId || episode}`
+      : `movie:${movie.id}`;
+    if (rewardedThisSession.current.has(contentKey)) return;
+    rewardedThisSession.current.add(contentKey);
+
+    try {
+      const result = await rewardWatchedContent(contentKey);
+      setRewardNotice(
+        result === "earned"
+          ? "Kamu mendapat 150 poin tontonan!"
+          : result === "unauthenticated"
+            ? "Masuk ke akun untuk mendapatkan poin tontonan."
+            : "Poin untuk tontonan ini sudah pernah diklaim.",
+      );
+    } catch (error) {
+      rewardedThisSession.current.delete(contentKey);
+      console.error("Failed to award watch points:", error);
+      setRewardNotice("Poin tontonan gagal disimpan. Coba putar ulang setelah beberapa saat.");
+    }
+  }
+
   const toggleLandscapeMode = async () => {
     const player = playerContainerRef.current;
     if (!player) return;
@@ -455,7 +485,11 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                 <div className="flex items-center gap-2">
                   <h2 className="truncate text-sm font-semibold sm:text-base">{movie.title}</h2>
                   <span className="shrink-0 rounded bg-[#e50914] px-1.5 py-0.2 text-[10px] font-bold uppercase text-white">
-                    {movie.isAnime ? "Otakudesu Stream" : "VidSrc"}
+                    {movie.isAnime
+                      ? movie.animeProvider === "samehadaku" || (movie.animeSlug && movie.animeSlug.startsWith("samehadaku:"))
+                        ? "Samehadaku Stream"
+                        : "Otakudesu Stream"
+                      : "VidSrc"}
                   </span>
                 </div>
                 <p className="flex items-center gap-1.5 text-[11px] text-white/50">
@@ -524,11 +558,10 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                   return (
                     <button
                       key={srv.id}
-                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                        isActive
+                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all ${isActive
                           ? "bg-[#e50914] text-white shadow"
                           : "bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
-                      }`}
+                        }`}
                       onClick={() => {
                         setActiveServerId(srv.id);
                         setReloadKey((prev) => prev + 1);
@@ -554,18 +587,17 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                 {!movie.isAnime &&
                   (movie.previewUrl ||
                     (detailsLookup?.key === lookupKey && detailsLookup.previewUrl)) && (
-                  <button
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                      activeServerId === "trailer"
-                        ? "bg-amber-600 text-white shadow"
-                        : "bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
-                    }`}
-                    onClick={() => setActiveServerId("trailer")}
-                    type="button"
-                  >
-                    Trailer
-                  </button>
-                )}
+                    <button
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${activeServerId === "trailer"
+                          ? "bg-amber-600 text-white shadow"
+                          : "bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+                        }`}
+                      onClick={() => setActiveServerId("trailer")}
+                      type="button"
+                    >
+                      Trailer
+                    </button>
+                  )}
               </div>
 
               {/* Anime Episode selector or Series Season & Episode selectors */}
@@ -655,9 +687,8 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
           <main className="mx-auto w-full max-w-[1000px] px-4 pb-5 pt-2 sm:px-6 sm:pt-4">
             <div
               ref={playerContainerRef}
-              className={`relative mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-xl bg-black shadow-[0_24px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/15 ${
-                isLandscapeMode ? "player-landscape-mode" : ""
-              }`}
+              className={`relative mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-xl bg-black shadow-[0_24px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/15 ${isLandscapeMode ? "player-landscape-mode" : ""
+                }`}
             >
               {isLandscapeMode && (
                 <button
@@ -675,6 +706,7 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                   autoPlay
                   className="h-full w-full object-contain"
                   controls
+                  onPlay={() => void rewardPlayback()}
                   playsInline
                   src={movie.playbackUrl}
                 />
@@ -761,6 +793,9 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                   allowFullScreen
                   className="h-full w-full border-0"
                   onError={() => setFailedFrameUrl(activeStreamUrl)}
+                  onLoad={() => {
+                    if (activeServerId !== "trailer") void rewardPlayback();
+                  }}
                   referrerPolicy="origin"
                   src={activeStreamUrl}
                   title={`Streaming ${movie.title}`}
@@ -773,12 +808,17 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
                   </h3>
                   <p className="mt-2 max-w-lg text-sm leading-6 text-white/55">
                     {movie.isAnime
-                      ? "Sedang memuat stream episode dari API Anime Otakudesu..."
+                      ? `Sedang memuat stream episode dari API Anime ${movie.animeProvider === "samehadaku" || (movie.animeSlug && movie.animeSlug.startsWith("samehadaku:")) ? "Samehadaku" : "Otakudesu"}...`
                       : "Memuat tautan video dari API VidSrc..."}
                   </p>
                 </div>
               )}
             </div>
+            {rewardNotice && (
+              <p aria-live="polite" className="mx-auto mt-3 max-w-[720px] text-sm font-medium text-emerald-300" role="status">
+                {rewardNotice}
+              </p>
+            )}
             {movie.isAnime && detailsLookup?.key === lookupKey && detailsLookup.watchUrl && (
               <a
                 className="mx-auto mt-4 inline-flex min-h-10 items-center gap-2 rounded border border-white/20 px-4 text-sm font-semibold text-white/80 transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"

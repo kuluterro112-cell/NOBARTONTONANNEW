@@ -13,6 +13,7 @@ import { freeMovies } from "../lib/free-movies";
 import { movies, type Movie, type MovieSections } from "../lib/movies";
 
 type CatalogueResponse = { movies: Movie[]; sections?: MovieSections };
+type SearchFilter = "all" | "movie" | "anime";
 
 function normalize(value: string) {
   return value
@@ -74,6 +75,7 @@ function SearchResults() {
   const [catalogue, setCatalogue] = useState<Movie[]>(movies);
   const [catalogueError, setCatalogueError] = useState(false);
   const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
+  const [filter, setFilter] = useState<SearchFilter>("all");
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [playerMovie, setPlayerMovie] = useState<Movie | null>(null);
   const [savedIds, setSavedIds] = useState<number[]>([]);
@@ -152,6 +154,15 @@ function SearchResults() {
       .sort((left, right) => right.score - left.score || Number(right.movie.rating) - Number(left.movie.rating))
       .map(({ movie }) => movie);
   }, [catalogue, query]);
+  const filteredResults = useMemo(
+    () =>
+      results.filter((movie) => {
+        if (filter === "anime") return movie.isAnime === true;
+        if (filter === "movie") return movie.isAnime !== true;
+        return true;
+      }),
+    [filter, results],
+  );
 
   function toggleSaved(movie: Movie) {
     setSavedIds((current) =>
@@ -181,7 +192,7 @@ function SearchResults() {
               </h1>
               {query && (
                 <p className="mt-2 text-sm text-white/55">
-                  {results.length} judul yang sama atau mirip
+                  {filteredResults.length} judul yang sama atau mirip
                 </p>
               )}
             </div>
@@ -200,6 +211,30 @@ function SearchResults() {
             </p>
           )}
 
+          {query && loadedQuery === originalQuery && (
+            <div aria-label="Filter jenis tontonan" className="mb-6 flex flex-wrap gap-2" role="group">
+              {([
+                ["all", "All", results.length],
+                ["movie", "Movie", results.filter((movie) => !movie.isAnime).length],
+                ["anime", "Anime", results.filter((movie) => movie.isAnime).length],
+              ] as const).map(([value, label, count]) => (
+                <button
+                  aria-pressed={filter === value}
+                  className={`min-h-10 rounded-full border px-5 text-sm font-semibold transition-colors ${
+                    filter === value
+                      ? "border-[#e50914] bg-[#e50914] text-white"
+                      : "border-white/20 bg-white/5 text-white/70 hover:border-white/45 hover:bg-white/10 hover:text-white"
+                  }`}
+                  key={value}
+                  onClick={() => setFilter(value)}
+                  type="button"
+                >
+                  {label} <span className="ml-1 opacity-70">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {!query ? (
             <div className="flex min-h-52 flex-col items-center justify-center text-center text-white/55">
               <Search className="mb-3 h-8 w-8" />
@@ -215,9 +250,9 @@ function SearchResults() {
               <LoaderCircle className="h-8 w-8 animate-spin text-[#e50914]" />
               Memuat semua hasil pencarian...
             </div>
-          ) : results.length > 0 ? (
+          ) : filteredResults.length > 0 ? (
             <div className="grid max-w-[1000px] grid-cols-3 items-start gap-x-3 gap-y-6 sm:gap-x-5 sm:gap-y-8">
-              {results.map((movie, index) => (
+              {filteredResults.map((movie, index) => (
                 <Fragment key={`${movie.mediaType || movie.type || "movie"}:${movie.id}`}>
                   <MovieCard
                     layout="grid"
@@ -227,18 +262,24 @@ function SearchResults() {
                     onToggleSaved={toggleSaved}
                     saved={savedIds.includes(movie.id)}
                   />
-                  {index === 5 && results.length > 6 && (
+                  {index === 5 && filteredResults.length > 6 && (
                     <div className="col-span-3">
                       <AdSenseUnit />
                     </div>
                   )}
                 </Fragment>
               ))}
-              {results.length <= 6 && (
+              {filteredResults.length <= 6 && (
                 <div className="col-span-3">
                   <AdSenseUnit />
                 </div>
               )}
+            </div>
+          ) : loadedQuery === originalQuery && results.length > 0 ? (
+            <div className="flex min-h-52 flex-col items-center justify-center text-center text-white/55">
+              <Film className="mb-3 h-8 w-8" />
+              <p className="text-lg font-semibold text-white">Tidak ada hasil untuk filter ini</p>
+              <p className="mt-1 text-sm">Pilih kategori lain untuk melihat hasil pencarian.</p>
             </div>
           ) : loadedQuery === originalQuery ? (
             <div className="flex min-h-52 flex-col items-center justify-center text-center text-white/55">

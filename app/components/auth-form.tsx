@@ -78,6 +78,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           bannerUrl: "",
           email: credential.user.email,
           isBanned: false,
+          xpPoints: 0,
+          lastRewardId: "",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -116,6 +118,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
             bannerUrl: "",
             email: credential.user.email,
             isBanned: false,
+            xpPoints: 0,
+            lastRewardId: "",
             createdAt: timestamp,
             updatedAt: timestamp,
           });

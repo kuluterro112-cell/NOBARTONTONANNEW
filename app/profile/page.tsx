@@ -13,6 +13,7 @@ import { adminAvatarOptions, defaultAvatar, isAdminAvatar } from "../lib/avatar-
 import { isHttpsVideoUrl } from "../lib/banner-options";
 import { ProfileBannerMedia } from "../components/profile-banner-media";
 import { db, type ProfileData } from "../lib/firebase-profile";
+import { getLevelProgress } from "../lib/points";
 
 const emptyProfile: ProfileData = {
   displayName: "",
@@ -26,6 +27,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<ProfileData>(emptyProfile);
+  const [xpPoints, setXpPoints] = useState(0);
   const [avatarOptions, setAvatarOptions] = useState<readonly { id: string; label: string; src: string }[]>(adminAvatarOptions);
   const [bannerOptions, setBannerOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +65,7 @@ export default function ProfilePage() {
               getDoc(doc(db, "settings", "profileBannerCatalog")),
             ]);
             const data = snapshot.exists() ? snapshot.data() : {};
+            setXpPoints(typeof data.xpPoints === "number" ? data.xpPoints : 0);
             const catalogData = catalogSnapshot.data();
             const catalogUrls = Array.isArray(catalogData?.urls)
               ? catalogData.urls.filter((url: unknown): url is string => typeof url === "string")
@@ -93,7 +96,9 @@ export default function ProfilePage() {
               if (data.isBanned === true) router.replace("/login?banned=1");
             }
             unsubscribeUser = onSnapshot(doc(db, "users", currentUser.uid), (userSnapshot) => {
-              if (userSnapshot.data()?.isBanned === true) router.replace("/login?banned=1");
+              const userData = userSnapshot.data();
+              if (userData?.isBanned === true) router.replace("/login?banned=1");
+              setXpPoints(typeof userData?.xpPoints === "number" ? userData.xpPoints : 0);
             });
           } catch {
             if (active) {
@@ -206,6 +211,9 @@ export default function ProfilePage() {
 
   if (!user) return <main className="auth-page" />;
 
+  const levelProgress = getLevelProgress(xpPoints);
+  const progressPercent = (levelProgress.pointsInLevel / levelProgress.pointsForNextLevel) * 100;
+
   return (
     <main className="profile-page">
       <header className="mx-auto flex w-full items-center justify-between gap-4">
@@ -248,6 +256,33 @@ export default function ProfilePage() {
         </div>
 
         <div className="px-5 pb-7 sm:px-9 sm:pb-9">
+        <section aria-label="Level tontonan" className="mb-7 rounded-lg border border-white/10 bg-black/25 p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#e50914]">Level tontonan</p>
+              <h2 className="mt-1 text-2xl font-black">Level {levelProgress.level}</h2>
+            </div>
+            <p className="text-sm text-white/65">
+              {levelProgress.pointsInLevel} / {levelProgress.pointsForNextLevel} poin ke level {levelProgress.level + 1}
+            </p>
+          </div>
+          <div
+            aria-label={`${Math.min(100, progressPercent).toFixed(0)}% menuju level ${levelProgress.level + 1}`}
+            className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"
+            role="progressbar"
+            aria-valuemax={levelProgress.pointsForNextLevel}
+            aria-valuemin={0}
+            aria-valuenow={levelProgress.pointsInLevel}
+          >
+            <div
+              className="h-full rounded-full bg-[#e50914] transition-[width] duration-500"
+              style={{ width: `${Math.min(100, progressPercent)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-white/45">
+            Total {levelProgress.totalPoints} poin · 150 poin untuk setiap film atau episode anime baru.
+          </p>
+        </section>
         <div className="flex items-center gap-3 border-b border-white/10 pb-6">
           <span className="grid h-10 w-10 place-items-center rounded bg-[#e50914] text-white">
             <Clapperboard className="h-5 w-5" />

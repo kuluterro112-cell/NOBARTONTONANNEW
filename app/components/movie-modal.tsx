@@ -118,7 +118,7 @@ export function MovieModal({ movie, saved, onClose, onPlay, onToggleSaved }: Mov
                   </button>
                   {displayMovie.isAnime && (
                     <span className="text-xs text-white/55">
-                      Subtitle Indonesia via Otakudesu
+                      Subtitle Indonesia via {displayMovie.animeProvider === "samehadaku" ? "Samehadaku" : "Otakudesu"}
                     </span>
                   )}
                 </div>

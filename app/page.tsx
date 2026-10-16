@@ -26,21 +26,49 @@ const fallbackSections: MovieSections = {
 
 type CatalogueResponse = { movies: Movie[]; sections: MovieSections };
 
+function createHeroPlaylist(catalogue: Movie[], sections: MovieSections): Movie[] {
+  function uniqueMovies(candidates: Movie[]) {
+    return [...new Map(candidates.map((movie) => [`${movie.mediaType ?? "movie"}:${movie.id}`, movie])).values()];
+  }
+
+  function moviesFromIds(ids: number[], predicate: (movie: Movie) => boolean) {
+    return ids.flatMap((id) => {
+      const movie = catalogue.find((candidate) => candidate.id === id);
+      return movie && predicate(movie) ? [movie] : [];
+    });
+  }
+
+  const isFilm = (movie: Movie) =>
+    !movie.isAnime && movie.mediaType !== "tv" && movie.type !== "series";
+  const animeIds = new Set(sections.anime);
+  const filmCandidates = uniqueMovies([
+    ...moviesFromIds([...sections.trending, ...sections.topRated], isFilm),
+    ...catalogue.filter(isFilm),
+  ]);
+  const animeCandidates = uniqueMovies([
+    ...moviesFromIds(sections.anime, (movie) => movie.isAnime === true),
+    ...catalogue.filter((movie) => movie.isAnime && animeIds.has(movie.id)),
+  ]);
+  const playlist: Movie[] = [];
+
+  for (let index = 0; index < 5; index += 1) {
+    const film = filmCandidates[index];
+    const anime = animeCandidates[index];
+    if (!film || !anime) break;
+    playlist.push(film, anime);
+  }
+
+  return playlist;
+}
+
 export default function Home() {
-  const [heroMovie, setHeroMovie] = useState<Movie>(trendingMovies[0]);
+  const [heroMovies, setHeroMovies] = useState<Movie[]>(trendingMovies);
   const [catalogue, setCatalogue] = useState<Movie[]>(movies);
   const [sections, setSections] = useState<MovieSections>(fallbackSections);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [playerMovie, setPlayerMovie] = useState<Movie | null>(null);
   const [savedIds, setSavedIds] = useState<number[]>([]);
   const [savedListReady, setSavedListReady] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setHeroMovie(trendingMovies[Math.floor(Math.random() * trendingMovies.length)]);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,11 +82,9 @@ export default function Home() {
         if (cancelled || !data?.movies.length) return;
         setCatalogue(data.movies);
         setSections(data.sections);
-        const featured = data.movies.filter(
-          (movie) => data.sections.trending.includes(movie.id) || data.sections.anime.includes(movie.id),
-        );
-        if (featured.length > 0) {
-          setHeroMovie(featured[Math.floor(Math.random() * featured.length)]);
+        const playlist = createHeroPlaylist(data.movies, data.sections);
+        if (playlist.length > 0) {
+          setHeroMovies(playlist);
         }
       })
       .catch(() => undefined);
@@ -115,12 +141,20 @@ export default function Home() {
   const actionMovies = byIds(sections.action);
   const comfortMovies = byIds(sections.comedy);
   const savedMovies = allMovies.filter((movie) => savedIds.includes(movie.id));
+  const heroPlaylistKey = heroMovies
+    .map((movie) => `${movie.mediaType ?? "movie"}:${movie.id}`)
+    .join("|");
 
   return (
     <>
       <Navbar />
       <main className="min-h-screen overflow-hidden bg-[#141414] text-white">
-        <Hero movie={heroMovie} onMoreInfo={setSelectedMovie} onPlay={openPlayer} />
+        <Hero
+          key={heroPlaylistKey}
+          movies={heroMovies}
+          onMoreInfo={setSelectedMovie}
+          onPlay={openPlayer}
+        />
 
         <div className="relative z-10 -mt-5 pb-12 sm:-mt-8">
           <>

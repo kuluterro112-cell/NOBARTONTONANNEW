@@ -35,6 +35,7 @@ import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { isAdminEmail } from "../lib/admin-emails";
 import { isHttpsVideoUrl } from "../lib/banner-options";
+import { getLevelProgress, getPointsAtLevelStart } from "../lib/points";
 import { ProfileBannerMedia } from "./profile-banner-media";
 import { db } from "../lib/firebase-profile";
 
@@ -45,6 +46,7 @@ type AdminUser = {
   isBanned: boolean;
   avatarUrl: string;
   bannerUrl: string;
+  xpPoints: number;
 };
 
 type AccessState = "loading" | "ready" | "denied";
@@ -63,6 +65,7 @@ export function AdminPanel() {
   const [adminUser, setAdminUser] = useState<User | null>(null);
   const [access, setAccess] = useState<AccessState>("loading");
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [levelDrafts, setLevelDrafts] = useState<Record<string, string>>({});
   const [avatarUrls, setAvatarUrls] = useState<string[]>([]);
   const [bannerUrls, setBannerUrls] = useState<string[]>([]);
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -84,8 +87,7 @@ export function AdminPanel() {
         getDoc(doc(db, "settings", "avatarCatalog")),
         getDoc(doc(db, "settings", "profileBannerCatalog")),
       ]);
-      setUsers(
-        usersSnapshot.docs.map((snapshot) => {
+      const loadedUsers = usersSnapshot.docs.map((snapshot) => {
           const data = snapshot.data();
           return {
             id: snapshot.id,
@@ -96,9 +98,15 @@ export function AdminPanel() {
             isBanned: data.isBanned === true,
             avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl : "",
             bannerUrl: typeof data.bannerUrl === "string" ? data.bannerUrl : "",
+            xpPoints: typeof data.xpPoints === "number" && Number.isSafeInteger(data.xpPoints)
+              ? data.xpPoints
+              : 0,
           };
-        }),
-      );
+        });
+      setUsers(loadedUsers);
+      setLevelDrafts(Object.fromEntries(
+        loadedUsers.map((user) => [user.id, String(getLevelProgress(user.xpPoints).level)]),
+      ));
       const urls = avatarsSnapshot.data()?.urls;
       setAvatarUrls(Array.isArray(urls) ? urls.filter((url): url is string => typeof url === "string") : []);
       const videoUrls = bannersSnapshot.data()?.urls;
@@ -292,7 +300,6 @@ export function AdminPanel() {
       setError("Admin tidak bisa membatasi akunnya sendiri.");
       return;
     }
-
     setBusyUser(user.id);
     setError("");
     setNotice("");
@@ -306,6 +313,33 @@ export function AdminPanel() {
       setNotice(isBanned ? `Akun ${user.email} dibatasi.` : `Akun ${user.email} diaktifkan kembali.`);
     } catch {
       setError("Status akun gagal diubah. Pastikan Firestore rules sudah dipublikasikan.");
+    } finally {
+      setBusyUser("");
+    }
+  }
+
+  async function setUserLevel(user: AdminUser) {
+    const level = Number(levelDrafts[user.id]);
+    let xpPoints: number;
+    try {
+      xpPoints = getPointsAtLevelStart(level);
+    } catch (levelError) {
+      setError(levelError instanceof Error ? levelError.message : "Level tidak valid.");
+      return;
+    }
+
+    setBusyUser(user.id);
+    setError("");
+    setNotice("");
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        xpPoints,
+        updatedAt: serverTimestamp(),
+      });
+      setUsers((current) => current.map((item) => item.id === user.id ? { ...item, xpPoints } : item));
+      setNotice(`Level ${level} berhasil ditetapkan untuk ${user.email}.`);
+    } catch {
+      setError("Level pengguna gagal diubah. Pastikan Firestore rules sudah dipublikasikan.");
     } finally {
       setBusyUser("");
     }
@@ -349,7 +383,7 @@ export function AdminPanel() {
             </Link>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#e50914]">Nobar Tontonan</p>
             <h1 className="mt-1 text-3xl font-bold">Admin panel</h1>
-            <p className="mt-1 text-sm text-white/50">Kelola avatar, banner video, dan akun pengguna.</p>
+            <p className="mt-1 text-sm text-white/50">Kelola avatar, banner video, level tontonan, dan akun pengguna.</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-white/50 sm:block">{adminUser?.email}</span>
@@ -478,7 +512,10 @@ export function AdminPanel() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="flex items-center gap-2 text-lg font-semibold"><UsersRound className="h-5 w-5 text-white/55" /> Pengguna</h2>
-                <p className="mt-1 text-xs text-white/45">{users.length} akun terdaftar · {users.filter((user) => user.isBanned).length} dibatasi</p>
+                <p className="mt-1 text-xs text-white/45">
+                  {users.length} akun terdaftar · {users.filter((user) => user.isBanned).length} dibatasi
+                </p>
+                <p className="mt-1 text-xs text-white/40">Mengatur level memulai pengguna dari awal level yang dipilih.</p>
               </div>
               <button aria-label="Muat ulang pengguna" className="auth-secondary-button !min-h-9 !w-auto" disabled={loadingData} onClick={() => void refreshData()} type="button">
                 {loadingData ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Muat ulang"}
@@ -502,20 +539,43 @@ export function AdminPanel() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{user.displayName}</p>
                       <p className="truncate text-xs text-white/45">{user.email}</p>
+                      <p className="mt-1 text-[11px] text-white/60">
+                        Level {getLevelProgress(user.xpPoints).level} · {user.xpPoints} poin
+                      </p>
                       <p className={`mt-1 text-[10px] font-semibold uppercase tracking-wide ${user.isBanned ? "text-red-300" : "text-emerald-300"}`}>
                         {user.isBanned ? "Dibatasi" : "Aktif"}
                       </p>
                     </div>
                   </div>
-                  <button
-                    className={`grid h-9 w-9 shrink-0 place-items-center rounded border ${user.isBanned ? "border-emerald-300/25 text-emerald-300 hover:bg-emerald-300/10" : "border-red-300/25 text-red-300 hover:bg-red-300/10"}`}
-                    disabled={busyUser === user.id || user.id === adminUser?.uid}
-                    onClick={() => void toggleBan(user)}
-                    title={user.isBanned ? "Aktifkan akun" : "Batasi akun"}
-                    type="button"
-                  >
-                    {busyUser === user.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : user.isBanned ? <Check className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <label className="sr-only" htmlFor={`user-level-${user.id}`}>Level pengguna</label>
+                    <input
+                      className="auth-input !min-h-9 !w-20 px-2 text-center"
+                      id={`user-level-${user.id}`}
+                      min={1}
+                      onChange={(event) => setLevelDrafts((current) => ({ ...current, [user.id]: event.target.value }))}
+                      type="number"
+                      value={levelDrafts[user.id] ?? "1"}
+                    />
+                    <button
+                      className="auth-secondary-button !min-h-9 !w-auto px-3 text-xs"
+                      disabled={busyUser === user.id || !levelDrafts[user.id]}
+                      onClick={() => void setUserLevel(user)}
+                      type="button"
+                    >
+                      Atur
+                    </button>
+                    <button
+                      aria-label={user.isBanned ? `Aktifkan ${user.email}` : `Batasi ${user.email}`}
+                      className={`grid h-9 w-9 shrink-0 place-items-center rounded border ${user.isBanned ? "border-emerald-300/25 text-emerald-300 hover:bg-emerald-300/10" : "border-red-300/25 text-red-300 hover:bg-red-300/10"}`}
+                      disabled={busyUser === user.id || user.id === adminUser?.uid}
+                      onClick={() => void toggleBan(user)}
+                      title={user.isBanned ? "Aktifkan akun" : "Batasi akun"}
+                      type="button"
+                    >
+                      {busyUser === user.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : user.isBanned ? <Check className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </article>
               ))}
               {visibleUsers.length === 0 && (

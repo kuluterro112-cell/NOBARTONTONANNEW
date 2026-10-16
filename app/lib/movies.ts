@@ -23,6 +23,7 @@ export type Movie = {
   mediaType?: "movie" | "tv";
   isAnime?: boolean;
   animeSlug?: string;
+  animeProvider?: "otakudesu" | "samehadaku";
   animeEpisodes?: {
     title: string;
     eps?: number | string | null;

@@ -37,7 +37,8 @@ service cloud.firestore {
 
       function validProfile() {
         return request.resource.data.keys().hasOnly([
-            'displayName', 'bio', 'gender', 'avatarUrl', 'bannerUrl', 'email', 'isBanned', 'createdAt', 'updatedAt'
+            'displayName', 'bio', 'gender', 'avatarUrl', 'bannerUrl', 'email', 'isBanned',
+            'xpPoints', 'lastRewardId', 'createdAt', 'updatedAt'
           ])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
@@ -51,7 +52,25 @@ service cloud.firestore {
           && request.resource.data.bannerUrl is string
           && allowedProfileBanner(request.resource.data.bannerUrl)
           && request.resource.data.email == request.auth.token.email
-          && request.resource.data.isBanned is bool;
+          && request.resource.data.isBanned is bool
+          && request.resource.data.get('xpPoints', 0) is int
+          && request.resource.data.get('lastRewardId', '') is string;
+      }
+
+      function validWatchRewardUpdate() {
+        let rewardId = request.resource.data.lastRewardId;
+        let rewardPath = /databases/$(database)/documents/users/$(userId)/watchRewards/$(rewardId);
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'xpPoints', 'lastRewardId', 'updatedAt'
+          ])
+          && request.resource.data.xpPoints is int
+          && request.resource.data.xpPoints == resource.data.get('xpPoints', 0) + 150
+          && request.resource.data.lastRewardId is string
+          && !exists(rewardPath)
+          && existsAfter(rewardPath)
+          && getAfter(rewardPath).data.points == 150
+          && getAfter(rewardPath).data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
       }
 
       allow get: if isOwner() || isAdmin();
@@ -59,18 +78,36 @@ service cloud.firestore {
       allow create: if isOwner()
         && validProfile()
         && request.resource.data.isBanned == false
+        && request.resource.data.get('xpPoints', 0) == 0
+        && request.resource.data.get('lastRewardId', '') == ''
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
       allow update: if (isOwner()
           && validProfile()
           && request.resource.data.email == resource.data.email
           && request.resource.data.isBanned == resource.data.isBanned
+          && request.resource.data.get('xpPoints', 0) == resource.data.get('xpPoints', 0)
+          && request.resource.data.get('lastRewardId', '') == resource.data.get('lastRewardId', '')
           && request.resource.data.createdAt == resource.data.createdAt)
+        || (isOwner() && validWatchRewardUpdate())
         || (isAdmin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBanned', 'updatedAt'])
-          && request.resource.data.isBanned is bool
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBanned', 'xpPoints', 'updatedAt'])
+          && request.resource.data.get('isBanned', resource.data.get('isBanned', false)) is bool
+          && request.resource.data.get('xpPoints', resource.data.get('xpPoints', 0)) is int
+          && request.resource.data.get('xpPoints', resource.data.get('xpPoints', 0)) >= 0
           && request.resource.data.updatedAt == request.time);
       allow delete: if false;
+
+      match /watchRewards/{rewardId} {
+        allow get, list: if isOwner() || isAdmin();
+        allow create: if isOwner()
+          && request.resource.data.keys().hasOnly(['contentKey', 'points', 'createdAt'])
+          && request.resource.data.contentKey is string
+          && request.resource.data.contentKey.size() <= 256
+          && request.resource.data.points == 150
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
     }
 
     match /settings/avatarCatalog {
