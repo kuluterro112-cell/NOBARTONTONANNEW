@@ -414,7 +414,7 @@ export function MoviePlayer({ movie, onClose }: MoviePlayerProps) {
           : result === "unauthenticated"
             ? "Masuk ke akun untuk mendapatkan poin tontonan."
             : result === "max-level"
-              ? "Level maksimum 100.000 sudah tercapai."
+              ? "Level maksimum 1.000.000 sudah tercapai."
               : "Poin untuk tontonan ini sudah pernah diklaim.",
       );
     } catch (error) {

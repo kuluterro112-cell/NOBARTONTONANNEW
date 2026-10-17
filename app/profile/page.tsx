@@ -12,8 +12,9 @@ import { externalImageLoader } from "../lib/external-image-loader";
 import { adminAvatarOptions, defaultAvatar, isAdminAvatar } from "../lib/avatar-options";
 import { isHttpsVideoUrl } from "../lib/banner-options";
 import { ProfileBannerMedia } from "../components/profile-banner-media";
+import { RankBadge } from "../components/rank-badge";
 import { db, type ProfileData } from "../lib/firebase-profile";
-import { formatPoints, getLevelProgress, getUserLevelProgress } from "../lib/points";
+import { formatPoints, getLevelProgress, getUserLevelProgress, MAX_LEVEL } from "../lib/points";
 
 const emptyProfile: ProfileData = {
   displayName: "",
@@ -274,26 +275,27 @@ export default function ProfilePage() {
               <h2 className="mt-1 text-2xl font-black">Level {levelProgress.level}</h2>
             </div>
             <p className="text-sm text-white/65">
-              {levelProgress.level === 100_000
+              {levelProgress.level === MAX_LEVEL
                 ? "Level maksimum tercapai"
                 : `${formatPoints(levelProgress.pointsInLevel)} / ${formatPoints(levelProgress.pointsForNextLevel)} poin ke level ${levelProgress.level + 1}`}
             </p>
           </div>
+          <RankBadge className="mt-4 px-4 py-1.5 text-sm" level={levelProgress.level} />
           <div
-            aria-label={levelProgress.level === 100_000 ? "Level maksimum tercapai" : `${Math.min(100, progressPercent).toFixed(0)}% menuju level ${levelProgress.level + 1}`}
+            aria-label={levelProgress.level === MAX_LEVEL ? "Level maksimum tercapai" : `${Math.min(100, progressPercent).toFixed(0)}% menuju level ${levelProgress.level + 1}`}
             className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"
             role="progressbar"
             aria-valuemax={100}
             aria-valuemin={0}
-            aria-valuenow={levelProgress.level === 100_000 ? 100 : progressPercent}
+            aria-valuenow={levelProgress.level === MAX_LEVEL ? 100 : progressPercent}
           >
             <div
               className="h-full rounded-full bg-[#e50914] transition-[width] duration-500"
-              style={{ width: `${levelProgress.level === 100_000 ? 100 : Math.min(100, progressPercent)}%` }}
+              style={{ width: `${levelProgress.level === MAX_LEVEL ? 100 : Math.min(100, progressPercent)}%` }}
             />
           </div>
           <p className="mt-2 text-xs text-white/45">
-            {levelProgress.level === 100_000
+            {levelProgress.level === MAX_LEVEL
               ? "Level maksimum · poin tontonan baru tidak lagi menaikkan level."
               : "150 poin untuk setiap film atau episode anime baru."}
           </p>

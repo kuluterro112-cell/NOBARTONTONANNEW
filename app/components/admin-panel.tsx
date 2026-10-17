@@ -35,11 +35,15 @@ import { auth, ensureAuthPersistence } from "../lib/firebase-client";
 import { externalImageLoader } from "../lib/external-image-loader";
 import { isAdminEmail } from "../lib/admin-emails";
 import { isHttpsVideoUrl } from "../lib/banner-options";
+import { RankBadge } from "./rank-badge";
 import {
   formatPoints,
   getLevelProgress,
+  getRankForLevel,
   getUserLevelProgress,
   MAX_LEVEL,
+  RANKS,
+  type RankId,
 } from "../lib/points";
 import { ProfileBannerMedia } from "./profile-banner-media";
 import { db } from "../lib/firebase-profile";
@@ -72,6 +76,7 @@ export function AdminPanel() {
   const [access, setAccess] = useState<AccessState>("loading");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [levelDrafts, setLevelDrafts] = useState<Record<string, string>>({});
+  const [rankDrafts, setRankDrafts] = useState<Record<string, RankId>>({});
   const [avatarUrls, setAvatarUrls] = useState<string[]>([]);
   const [bannerUrls, setBannerUrls] = useState<string[]>([]);
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -114,6 +119,9 @@ export function AdminPanel() {
       setUsers(loadedUsers);
       setLevelDrafts(Object.fromEntries(
         loadedUsers.map((user) => [user.id, String(user.level)]),
+      ));
+      setRankDrafts(Object.fromEntries(
+        loadedUsers.map((user) => [user.id, getRankForLevel(user.level).id]),
       ));
       const urls = avatarsSnapshot.data()?.urls;
       setAvatarUrls(Array.isArray(urls) ? urls.filter((url): url is string => typeof url === "string") : []);
@@ -343,9 +351,38 @@ export function AdminPanel() {
         updatedAt: serverTimestamp(),
       });
       setUsers((current) => current.map((item) => item.id === user.id ? { ...item, level, xpPoints: 0 } : item));
+      setRankDrafts((current) => ({ ...current, [user.id]: getRankForLevel(level).id }));
       setNotice(`Level ${level} berhasil ditetapkan untuk ${user.email}.`);
     } catch {
       setError("Level pengguna gagal diubah. Pastikan Firestore rules sudah dipublikasikan.");
+    } finally {
+      setBusyUser("");
+    }
+  }
+
+  async function setUserRank(user: AdminUser) {
+    const rank = RANKS.find((item) => item.id === rankDrafts[user.id]);
+    if (!rank) {
+      setError("Pilih rank yang valid.");
+      return;
+    }
+
+    setBusyUser(user.id);
+    setError("");
+    setNotice("");
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        level: rank.minLevel,
+        xpPoints: 0,
+        updatedAt: serverTimestamp(),
+      });
+      setUsers((current) => current.map((item) =>
+        item.id === user.id ? { ...item, level: rank.minLevel, xpPoints: 0 } : item,
+      ));
+      setLevelDrafts((current) => ({ ...current, [user.id]: String(rank.minLevel) }));
+      setNotice(`Rank ${rank.name} diatur untuk ${user.email} (level ${rank.minLevel.toLocaleString("id-ID")}).`);
+    } catch {
+      setError("Rank pengguna gagal diubah. Pastikan Firestore rules sudah dipublikasikan.");
     } finally {
       setBusyUser("");
     }
@@ -521,7 +558,7 @@ export function AdminPanel() {
                 <p className="mt-1 text-xs text-white/45">
                   {users.length} akun terdaftar · {users.filter((user) => user.isBanned).length} dibatasi
                 </p>
-                <p className="mt-1 text-xs text-white/40">Mengatur level memulai pengguna dari awal level yang dipilih.</p>
+                <p className="mt-1 text-xs text-white/40">Mengatur level atau rank juga memulai progres level dari awal. Admin dapat mengubah rank akunnya sendiri.</p>
               </div>
               <button aria-label="Muat ulang pengguna" className="auth-secondary-button !min-h-9 !w-auto" disabled={loadingData} onClick={() => void refreshData()} type="button">
                 {loadingData ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Muat ulang"}
@@ -535,7 +572,7 @@ export function AdminPanel() {
 
             <div className="mt-4 max-h-[480px] divide-y divide-white/[0.08] overflow-y-auto">
               {visibleUsers.map((user) => (
-                <article className="flex items-center justify-between gap-3 py-3" key={user.id}>
+                <article className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between" key={user.id}>
                   <div className="flex min-w-0 items-center gap-3">
                     {user.avatarUrl ? (
                       <Image alt="" className="h-10 w-10 shrink-0 rounded object-cover" height={40} loader={externalImageLoader} src={user.avatarUrl} unoptimized width={40} />
@@ -549,15 +586,40 @@ export function AdminPanel() {
                         Level {user.level} · {formatPoints(user.xpPoints)} /{" "}
                         {formatPoints(getUserLevelProgress(user.level, user.xpPoints).pointsForNextLevel)} poin
                       </p>
+                      <RankBadge level={user.level} className="mt-1" />
                       <p className={`mt-1 text-[10px] font-semibold uppercase tracking-wide ${user.isBanned ? "text-red-300" : "text-emerald-300"}`}>
                         {user.isBanned ? "Dibatasi" : "Aktif"}
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,0.55fr)_auto_auto] items-center gap-2 sm:flex sm:w-auto sm:shrink-0">
+                    <label className="sr-only" htmlFor={`user-rank-${user.id}`}>Rank pengguna</label>
+                    <select
+                      className="auth-input !min-h-9 !w-full px-2 text-xs sm:!w-44"
+                      id={`user-rank-${user.id}`}
+                      onChange={(event) => {
+                        const rank = RANKS.find((item) => item.id === event.target.value);
+                        if (rank) setRankDrafts((current) => ({ ...current, [user.id]: rank.id }));
+                      }}
+                      value={rankDrafts[user.id] ?? getRankForLevel(user.level).id}
+                    >
+                      {RANKS.map((rank) => (
+                        <option key={rank.id} value={rank.id}>
+                          {rank.name} ({rank.minLevel.toLocaleString("id-ID")}–{rank.maxLevel.toLocaleString("id-ID")})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="auth-secondary-button !min-h-9 !w-auto px-3 text-xs"
+                      disabled={busyUser === user.id}
+                      onClick={() => void setUserRank(user)}
+                      type="button"
+                    >
+                      Rank
+                    </button>
                     <label className="sr-only" htmlFor={`user-level-${user.id}`}>Level pengguna</label>
                     <input
-                      className="auth-input !min-h-9 !w-20 px-2 text-center"
+                      className="auth-input !min-h-9 !w-full px-2 text-center sm:!w-20"
                       id={`user-level-${user.id}`}
                       min={1}
                       max={MAX_LEVEL}
